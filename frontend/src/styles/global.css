@@ -1839,9 +1839,9 @@ a.welcome-list__row:hover {
 --------------------------------------------------------------------------- */
 .ds-refresh__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: end;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  align-items: start;
   padding: 14px 16px;
   background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
@@ -1852,8 +1852,20 @@ a.welcome-list__row:hover {
   min-width: 0;
 }
 
+/* Controls may wrap instead of overflowing their column when the drawer is
+   narrow (the interval input + unit select + hint do not fit on one line at
+   the drawer's 860px width). */
+.ds-refresh__field .ant-space {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+/* The action buttons get their own full-width row: as a third grid column they
+   squeezed the two fields and pushed their labels out of alignment. */
 .ds-refresh__actions {
+  grid-column: 1 / -1;
   justify-self: end;
+  padding-top: 2px;
 }
 
 .ds-refresh__scope {
