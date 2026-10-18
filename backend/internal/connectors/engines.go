@@ -153,9 +153,14 @@ func (s *MySQLSpec) SchemasQuery() string {
 }
 
 // TablesQuery lists tables in a schema.
+//
+// No table_catalog predicate here: that column (and current_database()) is a
+// PostgreSQL concept. MySQL has no current_database() function, so carrying it
+// over made every metadata query fail with error 1305 and left the SQL Lab tree
+// showing an empty table list for each database.
 func (s *MySQLSpec) TablesQuery() string {
 	return `SELECT table_name, table_type FROM information_schema.tables
-	        WHERE table_catalog = current_database() AND table_schema = '%s'
+	        WHERE table_schema = '%s'
 	        ORDER BY table_name`
 }
 
@@ -163,7 +168,7 @@ func (s *MySQLSpec) TablesQuery() string {
 func (s *MySQLSpec) ColumnsQuery() string {
 	return `SELECT column_name, data_type, is_nullable, column_default
 	        FROM information_schema.columns
-	        WHERE table_catalog = current_database() AND table_schema = '%s' AND table_name = '%s'
+	        WHERE table_schema = '%s' AND table_name = '%s'
 	        ORDER BY ordinal_position`
 }
 
