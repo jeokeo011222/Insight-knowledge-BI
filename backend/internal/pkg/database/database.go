@@ -56,7 +56,21 @@ func Migrate(db *gorm.DB) error {
 	// extension to be installed in the PostgreSQL server.
 	_ = db.Exec("CREATE EXTENSION IF NOT EXISTS vector").Error
 	if err := db.AutoMigrate(models.AIModels()...); err != nil {
-		db.Logger.Warn(context.Background(), "ai tables migration skipped: %v", err)
+		// GORM runs the batch in one transaction, so a single unsupported model
+		// (ai_meta_embedding needs pgvector) rolled back *every* AI table — the
+		// batch silently stopped creating new ones while the old ones survived,
+		// which made a newly registered table invisible with no error in sight.
+		// Migrating them one by one means a missing extension costs exactly one
+		// table (the vector one) instead of the whole plane.
+		var failed []string
+		for _, model := range models.AIModels() {
+			if mErr := db.AutoMigrate(model); mErr != nil {
+				failed = append(failed, fmt.Sprintf("%T: %v", model, mErr))
+			}
+		}
+		if len(failed) > 0 {
+			db.Logger.Warn(context.Background(), "ai tables migration skipped: %v", failed)
+		}
 	}
 	migrateSemanticIndexes(db)
 	seedDefaultThemes(db)

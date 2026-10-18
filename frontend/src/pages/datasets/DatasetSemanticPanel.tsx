@@ -14,10 +14,11 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Empty, Form, Input, Modal, Progress, Select, Space, Switch, Table, Tabs, Tag, Tooltip, message,
+  Alert, Button, Empty, Form, Input, Modal, Progress, Select, Space, Switch, Table, Tabs, Tag, Tooltip,
+  Upload, message,
 } from 'antd';
 import {
-  CheckOutlined, CloudDownloadOutlined, DeleteOutlined, ExportOutlined, PlusOutlined,
+  CheckOutlined, CloudDownloadOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, PlusOutlined,
   ReloadOutlined, RocketOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';
 import { errorMessage } from '../../api/client';
@@ -25,7 +26,8 @@ import { useI18n } from '../../i18n';
 import {
   applySemanticGap, coldStartSemanticModel, createSemanticRelationship, createSemanticRule,
   deleteSemanticModel, deleteSemanticRelationship, deleteSemanticRule, getSemanticModel,
-  listSemanticModels, publishSemanticModel, scanSemanticGaps, semanticExportUrl, updateSemanticModel,
+  importSemanticBundle, listSemanticModels, publishSemanticModel, scanSemanticGaps,
+  semanticExportUrl, updateSemanticModel,
 } from '../../api/semantic';
 import type {
   SemanticFieldRow, SemanticGap, SemanticGapReport, SemanticModelRow, SemanticModelView,
@@ -81,6 +83,31 @@ export function DatasetSemanticPanel({ datasetId, canWrite }: Props) {
       setLoading(false);
     }
   }, [datasetId]);
+
+  /**
+   * OSI import (W-10). The result is shown verbatim: "created 1, skipped 3" with
+   * the reasons is the whole value — a silent import that drops the parts it
+   * cannot express is how a semantic layer quietly becomes wrong.
+   */
+  const importOSI = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const format = file.name.endsWith('.json') ? 'osi-json' : 'osi';
+        const result = await importSemanticBundle(datasetId, text, format);
+        const parts = [
+          result.created?.length ? `${t('dataset.semantic.import_created')} ${result.created.join(', ')}` : '',
+          result.updated?.length ? `${t('dataset.semantic.import_updated')} ${result.updated.join(', ')}` : '',
+          result.skipped?.length ? `${t('dataset.semantic.import_skipped')} ${result.skipped.join('; ')}` : '',
+        ].filter(Boolean);
+        message.success(parts.join(' · ') || t('dataset.semantic.import_empty'));
+        await loadModels();
+      } catch (error) {
+        message.error(errorMessage(error));
+      }
+    },
+    [datasetId, loadModels, t],
+  );
 
   const loadView = useCallback(async (id: number) => {
     setLoading(true);
@@ -486,6 +513,31 @@ export function DatasetSemanticPanel({ datasetId, canWrite }: Props) {
         >
           YAML
         </Button>
+        <Tooltip title={t('dataset.semantic.osi_export_hint')}>
+          <Button
+            size="small"
+            icon={<ExportOutlined />}
+            onClick={() => window.open(semanticExportUrl(datasetId, 'osi'), '_blank')}
+          >
+            OSI
+          </Button>
+        </Tooltip>
+        {canWrite ? (
+          <Upload
+            accept=".yaml,.yml,.json"
+            showUploadList={false}
+            beforeUpload={file => {
+              void importOSI(file);
+              return false;
+            }}
+          >
+            <Tooltip title={t('dataset.semantic.osi_import_hint')}>
+              <Button size="small" icon={<ImportOutlined />}>
+                {t('dataset.semantic.import_osi')}
+              </Button>
+            </Tooltip>
+          </Upload>
+        ) : null}
         {canWrite ? (
           <>
             <Button size="small" icon={<ReloadOutlined />} loading={saving} onClick={() => void coldStart(true)}>

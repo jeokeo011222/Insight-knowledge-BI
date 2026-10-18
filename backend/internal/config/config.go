@@ -178,10 +178,19 @@ type Config struct {
 	// AITemperature pins sampling for every model call. It must be sent
 	// explicitly (0 is a legal value), otherwise the provider default (~1.0)
 	// makes "same question, same SQL" impossible to reproduce.
+	//
+	// The default is 0, not 0.2. A BI Agent is a deterministic function of the
+	// question plus the schema: two runs that disagree produce two different
+	// numbers for the same question, and nobody can tell which one to trust.
+	// Operators who want a "creative" agent can raise it, but the product's
+	// default claim — same question, same SQL — has to hold out of the box.
 	AITemperature float64 `mapstructure:"AI_TEMPERATURE"`
 	// AIMaxTokens caps the completion length; 0 keeps the provider default.
 	AIMaxTokens int `mapstructure:"AI_MAX_TOKENS"`
-	// AISeed enables a deterministic seed when the provider supports it.
+	// AISeed enables a deterministic seed when the provider supports it. A
+	// non-zero default is deliberate: temperature 0 removes most sampling
+	// variance but not all of it (batching, MoE routing), and a pinned seed is
+	// the only remaining lever the provider exposes.
 	AISeed int `mapstructure:"AI_SEED"`
 
 	// Agent guardrails
@@ -202,7 +211,12 @@ type Config struct {
 	AIExplainMaxRows  int `mapstructure:"AI_EXPLAIN_MAX_ROWS"`
 	AISamplesRowLimit int `mapstructure:"AI_SAMPLES_ROW_LIMIT"`
 	AICacheTTLSec     int `mapstructure:"AI_CACHE_TTL_SEC"`
-	AIInsightMaxLen   int `mapstructure:"AI_INSIGHT_MAX_LEN"`
+	// AIReplyReplayTTLSec is how long an answer may be replayed for an identical
+	// question (same user, same dataset, unchanged result rows). 0 disables the
+	// replay layer; the default is short on purpose, because "same question"
+	// must not silently mean "last hour's answer".
+	AIReplyReplayTTLSec int `mapstructure:"AI_REPLAY_TTL_SEC"`
+	AIInsightMaxLen     int `mapstructure:"AI_INSIGHT_MAX_LEN"`
 	// AISchemaCompactThreshold switches wide datasets from "whole schema" to
 	// relevance-ranked context (see internal/ai/schema_context.go).
 	AISchemaCompactThreshold int `mapstructure:"AI_SCHEMA_COMPACT_THRESHOLD"`
@@ -347,9 +361,9 @@ var defaults = map[string]any{
 	"AI_LLM_MODEL":              "qwen2.5:7b",
 	"AI_LLM_TIMEOUT_SEC":        60,
 	"AI_EMBEDDING_MODEL":        "bge-m3",
-	"AI_TEMPERATURE":            0.2,
+	"AI_TEMPERATURE":            0,
 	"AI_MAX_TOKENS":             0,
-	"AI_SEED":                   0,
+	"AI_SEED":                   7,
 	"AI_AGENT_MAX_STEPS":        6,
 	"AI_AGENT_MAX_TOOL_CALLS":   8,
 	"AI_AGENT_RUN_TIMEOUT_SEC":  120,
@@ -363,6 +377,7 @@ var defaults = map[string]any{
 	"AI_EXPLAIN_MAX_ROWS":       20000000,
 	"AI_SAMPLES_ROW_LIMIT":      200,
 	"AI_CACHE_TTL_SEC":          3600,
+	"AI_REPLAY_TTL_SEC":         300,
 	"AI_INSIGHT_MAX_LEN":        800,
 	// AI_SCHEMA_COMPACT_THRESHOLD is the compact-schema size (in characters)
 	// above which the Agent stops receiving every column and switches to

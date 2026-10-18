@@ -279,7 +279,40 @@ export async function applySemanticGap(
   return response.result;
 }
 
-/** Export URL for a direct download (the browser carries the session cookie). */
-export function semanticExportUrl(datasetID: number, format: 'json' | 'yaml' = 'json'): string {
+/**
+ * Export URL for a direct download (the browser carries the session cookie).
+ *
+ * `osi` is the vendor-neutral Open Semantic Interchange format (W-10). It is the
+ * one to hand to another tool: our own bundle format is only understood here.
+ */
+export function semanticExportUrl(
+  datasetID: number,
+  format: 'json' | 'yaml' | 'osi' | 'osi-json' = 'json',
+): string {
   return `${semanticEndpoints.export(datasetID)}?format=${format}`;
+}
+
+export interface SemanticImportResult {
+  created: string[] | null;
+  updated: string[] | null;
+  skipped: string[] | null;
+  issues: SemanticIssue[] | null;
+}
+
+/**
+ * Import a bundle or an OSI document. The payload is sent verbatim: parsing it
+ * as JSON first would destroy YAML, and re-encoding it as a JSON string would
+ * make every import fail with "OSI YAML 解析失败".
+ */
+export async function importSemanticBundle(
+  datasetID: number,
+  payload: string,
+  format: 'json' | 'yaml' | 'osi' | 'osi-json' = 'osi',
+): Promise<SemanticImportResult> {
+  const response = await client.postText<{ result: SemanticImportResult }>(
+    `${semanticEndpoints.import(datasetID)}?format=${format}`,
+    payload,
+    'application/yaml',
+  );
+  return response.result;
 }

@@ -76,6 +76,9 @@ type AnswerEvent struct {
 	ToolErrorCount   int `json:"toolErrorCount,omitempty"`
 	EmptyResultCount int `json:"emptyResultCount,omitempty"`
 	SelfCheckCount   int `json:"selfCheckCount,omitempty"`
+	// Replayed marks an answer served from the replay store (same question,
+	// same numbers) instead of a fresh model run.
+	Replayed bool `json:"replayed,omitempty"`
 }
 
 // ErrorEvent reports a terminal failure while streaming.

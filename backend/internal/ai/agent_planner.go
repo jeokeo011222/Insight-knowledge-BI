@@ -92,6 +92,7 @@ func (p *planner) systemPrompt(actx registry.AIContext, scope *runScope, questio
 		b.WriteString("7. 指标口径受治理：字典中已定义的指标必须原样使用其 approved 表达式；" +
 			"用户要求的指标在字典中不存在时，明确回复「该指标未定义」并请用户确认口径，禁止自行猜测聚合方式。\n")
 	}
+	b.WriteString(sqlContractBlock(en))
 
 	if note := contextNote(actx); note != "" {
 		b.WriteString("\n当前上下文：")
@@ -119,6 +120,43 @@ func (p *planner) systemPrompt(actx registry.AIContext, scope *runScope, questio
 		b.WriteString(digest)
 	}
 	return b.String()
+}
+
+// agentPromptVersion stamps the prompt contract. It takes part in the replay
+// key, so changing the prompt invalidates replayable answers instead of serving
+// a result the current prompt would never have produced.
+const agentPromptVersion = "p2026-10-18-1"
+
+// sqlContractBlock is the fixed SQL template every run is held to.
+//
+// Why a template at all: the same question asked twice used to come back as
+// three different statements — different aliases, COUNT(1) vs COUNT(*), with and
+// without a schema prefix — and two different numbers for the user to reconcile.
+// Canonicalising the executed SQL (sql_canonical.go) makes the *product*
+// reproducible; telling the model the same contract makes the *first* attempt
+// land on it, which is what keeps the text short and the answer cacheable.
+//
+// The rules are deliberately mechanical: they can be checked, they cost ~200
+// tokens, and they remove exactly the degrees of freedom that carry no meaning.
+func sqlContractBlock(en bool) string {
+	if en {
+		return "\nSQL contract (fixed template — follow it exactly):\n" +
+			"- Skeleton: SELECT <dimensions>, <aggregate> AS <alias> FROM <schema>.<table> [WHERE …] [GROUP BY <dimensions>] [ORDER BY <alias> DESC] [LIMIT n]\n" +
+			"- Write table names as <schema>.<table> — no other prefix, no backticks.\n" +
+			"- Aggregates are COUNT(*), SUM(col), AVG(col), MIN(col), MAX(col). Never COUNT(1); never wrap in ROUND/CAST just for looks.\n" +
+			"- Aliases come from the expression, lower-case: count, sum_num, avg_num, count_distinct_name, ratio_sum_num_count.\n" +
+			"- ORDER BY + LIMIT only for a Top-N / ranking question; do not add LIMIT to a plain metric.\n" +
+			"- Time buckets use DATE_TRUNC('<grain>', <time column>), never string slicing.\n" +
+			"- One question, one statement: do not switch aliases, table spelling or aggregate style between attempts.\n"
+	}
+	return "\nSQL 书写规范（固定模板，必须照做）：\n" +
+		"- 骨架：SELECT <维度>, <聚合> AS <别名> FROM <schema>.<表> [WHERE …] [GROUP BY <维度>] [ORDER BY <别名> DESC] [LIMIT n]\n" +
+		"- 表名写成 <schema>.<表>，不加别的前缀、不用反引号。\n" +
+		"- 聚合只用 COUNT(*)、SUM(col)、AVG(col)、MIN(col)、MAX(col)；不要写 COUNT(1)，也不要为了好看加 ROUND/CAST。\n" +
+		"- 别名由表达式决定，全小写：count、sum_num、avg_num、count_distinct_name、ratio_sum_num_count。\n" +
+		"- 只有排名/前 N 这类问题才写 ORDER BY + LIMIT；普通指标不要顺手加 LIMIT。\n" +
+		"- 时间粒度用 DATE_TRUNC('<粒度>', <时间列>)，不要用字符串截取。\n" +
+		"- 一个问题只有一种写法：重试时不要换别名、换表名写法或换聚合风格。\n"
 }
 
 // actxDatasetID extracts the optional dataset binding from the run context.

@@ -178,6 +178,10 @@ type ModelInput struct {
 	Status         string         `json:"status"`
 	Fields         []FieldInput   `json:"fields"`
 	DefaultFilters datatypes.JSON `json:"default_filters"`
+	// Source records how the model came to exist (manual / generated /
+	// imported). It is not user-editable through the API: "this was imported
+	// from OSI" is provenance, not a preference.
+	Source string `json:"-"`
 }
 
 // FieldInput is one field in a create/update payload.
@@ -234,7 +238,7 @@ func (s *Service) CreateModel(ctx context.Context, in ModelInput) (*ModelView, e
 	m := models.SemanticModel{
 		DatasetID: in.DatasetID, Name: name, Description: in.Description,
 		PrimaryKey: in.PrimaryKey, Status: firstNonEmpty(in.Status, "draft"),
-		Version: 1, Source: "manual", DefaultFilters: in.DefaultFilters,
+		Version: 1, Source: firstNonEmpty(in.Source, "manual"), DefaultFilters: in.DefaultFilters,
 	}
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&m).Error; err != nil {

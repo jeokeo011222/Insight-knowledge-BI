@@ -278,3 +278,42 @@ type AISQLMemory struct {
 
 // TableName returns the original table name.
 func (AISQLMemory) TableName() string { return "ai_sql_memory" }
+
+// AIRunReplay is one replayable answer: the SQL a question resolved to, the
+// answer it produced, and a hash of the rows it returned.
+//
+// It is the "命中记忆库" half of determinism. Canonical SQL (sql_canonical.go)
+// makes the same question resolve to the same statement; the replay table makes
+// the same question avoid the model entirely while the data has not moved. The
+// row hash is the safety catch: if the numbers changed, the recorded answer is
+// discarded and the run is regenerated, so a replay can never show a stale
+// figure.
+//
+// The key includes user_id on purpose: the same question means different rows to
+// two people under RLS and column masking, so answers must never cross users.
+type AIRunReplay struct {
+	BaseModel
+	UserID       int    `gorm:"column:user_id;uniqueIndex:uq_ai_run_replay_key" json:"user_id"`
+	AgentID      int    `gorm:"column:agent_id;uniqueIndex:uq_ai_run_replay_key" json:"agent_id"`
+	DatasetID    int    `gorm:"column:dataset_id;uniqueIndex:uq_ai_run_replay_key" json:"dataset_id"`
+	QuestionHash string `gorm:"column:question_hash;size:64;uniqueIndex:uq_ai_run_replay_key" json:"question_hash"`
+	// PromptVersion invalidates every entry when the prompt contract changes.
+	PromptVersion string `gorm:"column:prompt_version;size:32;uniqueIndex:uq_ai_run_replay_key" json:"prompt_version"`
+
+	Question   string    `gorm:"column:question;type:text" json:"question"`
+	RunID      int       `gorm:"column:run_id;index" json:"run_id"`
+	SQLQuery   string    `gorm:"column:sql_query;type:text" json:"sql_query"`
+	SQLHash    string    `gorm:"column:sql_hash;size:64;index" json:"sql_hash"`
+	Answer     string    `gorm:"column:answer;type:text" json:"answer"`
+	Artifacts  string    `gorm:"column:artifacts;type:jsonb" json:"artifacts"`
+	PlanJSON   string    `gorm:"column:plan_json;type:jsonb" json:"plan_json"`
+	ResultHash string    `gorm:"column:result_hash;size:64" json:"result_hash"`
+	RowCount   int       `gorm:"column:row_count" json:"row_count"`
+	TokenUsage int       `gorm:"column:token_usage" json:"token_usage"`
+	LatencyMS  int       `gorm:"column:latency_ms" json:"latency_ms"`
+	Hits       int       `gorm:"column:hits;default:0" json:"hits"`
+	ExpiresOn  time.Time `gorm:"column:expires_on;index" json:"expires_on"`
+}
+
+// TableName returns the original table name.
+func (AIRunReplay) TableName() string { return "ai_run_replay" }

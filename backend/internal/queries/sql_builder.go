@@ -30,11 +30,14 @@ type BuildOptions struct {
 }
 
 // Projection is one entry of the generated SELECT list.
+// Projection is one selected column. The JSON tags matter: this struct is
+// returned verbatim by the semantic query API (dry runs) and the MCP bridge,
+// so Go field names would leak into a public contract.
 type Projection struct {
-	Label      string
-	Expression string
-	Type       string
-	IsMetric   bool
+	Label      string `json:"label"`
+	Expression string `json:"expression"`
+	Type       string `json:"type"`
+	IsMetric   bool   `json:"is_metric"`
 }
 
 // BuiltQuery is the result of BuildSQL.

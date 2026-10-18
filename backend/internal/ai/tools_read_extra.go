@@ -130,17 +130,15 @@ func resultSampler(s *Service) registry.ToolExecutor {
 		if s.Queries == nil {
 			return nil, errors.New("query engine is unavailable")
 		}
-		if err := ValidateReadOnlySQL(in.SQL); err != nil {
-			return nil, err
-		}
-		if err := s.guardDatasetSQL(ctx, in.DatasetID, in.SQL); err != nil {
+		statement, err := s.prepareAgentSQL(ctx, in.DatasetID, in.SQL)
+		if err != nil {
 			return nil, err
 		}
 		limit := in.Limit
 		if limit <= 0 || limit > s.Config.AISamplesRowLimit {
 			limit = s.Config.AISamplesRowLimit
 		}
-		res, err := s.Queries.ExecuteReadOnlySQL(ctx, registry.UserIDFrom(ctx), in.SQL, queries.ReadOnlyOptions{
+		res, err := s.Queries.ExecuteReadOnlySQL(ctx, registry.UserIDFrom(ctx), statement, queries.ReadOnlyOptions{
 			DatasetID:     in.DatasetID,
 			RowLimit:      limit,
 			ExemptMasking: isAdminFrom(ctx),

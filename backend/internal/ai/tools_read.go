@@ -80,17 +80,14 @@ func queryExecutor(s *Service) registry.ToolExecutor {
 		if s.Queries == nil {
 			return nil, errors.New("query engine is unavailable")
 		}
-		if err := ValidateReadOnlySQL(in.SQL); err != nil {
-			return nil, err
-		}
-		// Structural guard: table whitelist, source/function blocklist, hidden
-		// columns. It runs after the cheap keyword pass and before any SQL
-		// reaches the engine.
-		if err := s.guardDatasetSQL(ctx, in.DatasetID, in.SQL); err != nil {
+		// Canonical form first, then guard, then execute: what was approved is
+		// exactly what runs, and the SQL the user sees is reproducible.
+		statement, err := s.prepareAgentSQL(ctx, in.DatasetID, in.SQL)
+		if err != nil {
 			return nil, err
 		}
 
-		res, err := s.Queries.ExecuteReadOnlySQL(ctx, registry.UserIDFrom(ctx), in.SQL, queries.ReadOnlyOptions{
+		res, err := s.Queries.ExecuteReadOnlySQL(ctx, registry.UserIDFrom(ctx), statement, queries.ReadOnlyOptions{
 			DatasetID: in.DatasetID,
 			RowLimit:  s.Config.AIQueryMaxRows,
 			// Only the compliance officer (admin) sees unmasked values; everyone
@@ -101,7 +98,11 @@ func queryExecutor(s *Service) registry.ToolExecutor {
 			return nil, err
 		}
 		out := map[string]any{
+			// sql is the statement the engine actually ran (the executor wraps it
+			// in a row-limit subquery); statement is the canonical form the model
+			// authored, which is what a replay must re-execute.
 			"sql":       res.SQL,
+			"statement": statement,
 			"rows":      res.Data,
 			"colnames":  res.ColNames,
 			"rowcount":  res.RowCount,

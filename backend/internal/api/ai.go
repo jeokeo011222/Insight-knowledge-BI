@@ -617,6 +617,9 @@ type agentInvokeRequest struct {
 	SessionID string             `json:"session_id"`
 	AgentID   int                `json:"agent_id"`
 	Context   registry.AIContext `json:"context"`
+	// NoReplay forces a fresh model run, bypassing the answer-replay layer. The
+	// determinism benchmark sets it to measure generation rather than caching.
+	NoReplay bool `json:"no_replay"`
 }
 
 // agentInvoke runs the Agent once and streams its plan→act→observe→answer
@@ -648,7 +651,11 @@ func (a *aiAPI) agentInvoke(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 
 	emit := func(ev ai.Event) { writeSSE(w, flusher, ev) }
-	a.svc.Runtime().Run(r.Context(), userIDOf(r), sessionID, req.Question, req.AgentID, req.Context, emit)
+	a.svc.Runtime().RunWith(r.Context(), userIDOf(r), ai.RunInput{
+		Question: req.Question, SessionID: sessionID,
+		AgentID: req.AgentID, Context: req.Context, Emit: emit,
+		NoReplay: req.NoReplay,
+	})
 }
 
 func writeSSEHeaders(w http.ResponseWriter) {

@@ -684,18 +684,27 @@ func collectCTENames(tokens []guardToken) map[string]bool {
 	return out
 }
 
-// guardDatasetSQL is the Service-level entry point: it loads the dataset and its
-// columns, then guards the statement. A dataset that cannot be read is reported
-// explicitly rather than silently skipping the whitelist.
-func (s *Service) guardDatasetSQL(ctx context.Context, datasetID int, statement string) error {
-	if s.DB == nil {
-		// Without metadata we can still do the lexical checks.
-		return GuardSQL(SQLGuardInput{Statement: statement})
-	}
+// datasetGuardInfo is the dataset metadata both the guard and the canonical
+// writer need. Loading it once per statement keeps the two from disagreeing
+// about which table or columns exist.
+type datasetGuardInfo struct {
+	Schema string
+	Table  string
+	// Physical is true for a dataset backed by a real table, which is the only
+	// case where a table whitelist exists. A virtual dataset (custom SQL or a
+	// SQL Lab view) has no physical table name to whitelist.
+	Physical bool
+	// Visible columns (usable in SQL) and hidden ones (must be rejected).
+	Columns []string
+	Hidden  []string
+}
+
+// loadDatasetGuardInfo reads the dataset row and its columns.
+func (s *Service) loadDatasetGuardInfo(ctx context.Context, datasetID int) (*datasetGuardInfo, error) {
 	var table models.SqlaTable
 	if err := s.DB.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", datasetID).
 		First(&table).Error; err != nil {
-		return &SQLGuardError{
+		return nil, &SQLGuardError{
 			Code: GuardMetadataUnavailable, Phase: "sql_guard",
 			Message: fmt.Sprintf("数据集 %d 不存在或不可读，无法校验 SQL 的可读范围", datasetID),
 			Hint:    "请确认 dataset_id 后重试",
@@ -704,37 +713,94 @@ func (s *Service) guardDatasetSQL(ctx context.Context, datasetID int, statement 
 	var columns []models.TableColumn
 	if err := s.DB.WithContext(ctx).Where("table_id = ?", table.ID).
 		Order("column_name").Find(&columns).Error; err != nil {
-		return &SQLGuardError{
+		return nil, &SQLGuardError{
 			Code: GuardMetadataUnavailable, Phase: "sql_guard",
 			Message: "列元数据读取失败，无法校验 SQL",
 			Hint:    "稍后重试；如持续失败请检查元数据库",
 		}
 	}
-
-	in := SQLGuardInput{Statement: statement}
-	available := make([]string, 0, len(columns))
+	info := &datasetGuardInfo{
+		Schema:   table.Schema,
+		Table:    table.TableNameStr,
+		Physical: strings.TrimSpace(table.SQL) == "" && !table.IsSQLLabView,
+		Columns:  make([]string, 0, len(columns)),
+	}
 	for _, column := range columns {
 		if !column.IsActive || !column.AgentVisible {
 			continue
 		}
-		available = append(available, column.ColumnName)
+		info.Columns = append(info.Columns, column.ColumnName)
 	}
-	in.AvailableColumns = available
 	for _, column := range columns {
 		if column.AgentVisible {
 			continue
 		}
-		in.HiddenColumns = append(in.HiddenColumns, column.ColumnName)
+		info.Hidden = append(info.Hidden, column.ColumnName)
 	}
+	return info, nil
+}
 
+// prepareAgentSQL is the single entry point for SQL authored by the model: it
+// folds the statement into canonical form, then validates and guards it.
+//
+// Canonicalising *before* the guard matters for more than tidiness: the text
+// the guard approves is exactly the text the engine executes, so there is no
+// window in which a rewriter could reintroduce something the guard rejected.
+// A statement the rewriter cannot tokenise is passed through unchanged and
+// guarded as-is.
+func (s *Service) prepareAgentSQL(ctx context.Context, datasetID int, statement string) (string, error) {
+	if s.DB == nil {
+		// Without metadata we can still do the lexical checks.
+		if err := ValidateReadOnlySQL(statement); err != nil {
+			return "", err
+		}
+		if err := GuardSQL(SQLGuardInput{Statement: statement}); err != nil {
+			return "", err
+		}
+		return canonicalizeSQL(statement, CanonicalOptions{}), nil
+	}
+	info, err := s.loadDatasetGuardInfo(ctx, datasetID)
+	if err != nil {
+		return "", err
+	}
+	canonical := canonicalizeSQL(statement, CanonicalOptions{
+		Schema: info.Schema, Table: info.Table, Columns: info.Columns,
+	})
+	if err := ValidateReadOnlySQL(canonical); err != nil {
+		return "", err
+	}
+	if err := s.guardWith(ctx, info, canonical); err != nil {
+		return "", err
+	}
+	return canonical, nil
+}
+
+// guardDatasetSQL is the Service-level entry point: it loads the dataset and its
+// columns, then guards the statement. A dataset that cannot be read is reported
+// explicitly rather than silently skipping the whitelist.
+func (s *Service) guardDatasetSQL(ctx context.Context, datasetID int, statement string) error {
+	if s.DB == nil {
+		// Without metadata we can still do the lexical checks.
+		return GuardSQL(SQLGuardInput{Statement: statement})
+	}
+	info, err := s.loadDatasetGuardInfo(ctx, datasetID)
+	if err != nil {
+		return err
+	}
+	return s.guardWith(ctx, info, statement)
+}
+
+// guardWith applies the exposure rules using already-loaded metadata.
+func (s *Service) guardWith(_ context.Context, info *datasetGuardInfo, statement string) error {
+	in := SQLGuardInput{Statement: statement, AvailableColumns: info.Columns, HiddenColumns: info.Hidden}
 	// Virtual datasets read through their own SQL, so the physical table name is
 	// unknown to us; the session downgrade and function blocklist still apply.
-	if strings.TrimSpace(table.SQL) == "" && !table.IsSQLLabView {
-		in.AllowedTables = append(in.AllowedTables, table.TableNameStr)
-		if table.Schema != "" {
-			in.AllowedTables = append(in.AllowedTables, table.Schema+"."+table.TableNameStr)
+	if info.Physical && info.Table != "" {
+		in.AllowedTables = append(in.AllowedTables, info.Table)
+		if info.Schema != "" {
+			in.AllowedTables = append(in.AllowedTables, info.Schema+"."+info.Table)
 		}
-		in.ReviewTables = []string{table.TableNameStr}
+		in.ReviewTables = []string{info.Table}
 	}
 	return GuardSQL(in)
 }

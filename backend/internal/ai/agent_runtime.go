@@ -40,6 +40,9 @@ type RunResult struct {
 	EmptyResultCount int
 	SelfCheckCount   int
 	SQLHash          string
+	// Replayed reports that the answer came from the replay store rather than a
+	// fresh model run (same question, unchanged numbers).
+	Replayed bool
 }
 
 // RunInput is one Agent invocation. It is a struct (rather than the positional
@@ -51,6 +54,9 @@ type RunInput struct {
 	AgentID   int
 	Context   registry.AIContext
 	Emit      func(Event)
+	// NoReplay bypasses the answer-replay layer, forcing a fresh model run. The
+	// determinism benchmark uses it to measure generation, not caching.
+	NoReplay bool
 	// Resume, when set, continues a previous run instead of starting cold.
 	Resume *ResumeSeed
 }
@@ -78,6 +84,11 @@ func (r *Runtime) Run(ctx context.Context, userID int, sessionID, question strin
 // already-completed observations are replayed into the model context, which is
 // what makes "reconnect and carry on" cheaper than re-asking the question.
 func (r *Runtime) Resume(ctx context.Context, userID int, in RunInput) *RunResult {
+	return r.execute(ctx, userID, in)
+}
+
+// RunWith is Run with the full input (no-replay control, resume seed).
+func (r *Runtime) RunWith(ctx context.Context, userID int, in RunInput) *RunResult {
 	return r.execute(ctx, userID, in)
 }
 
@@ -109,6 +120,23 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 		return res
 	}
 
+	runCtx := withRunScope(ctx, scope)
+	if timeout := r.timeout(agent); timeout > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(runCtx, timeout)
+		defer cancel()
+	}
+
+	// Answer replay: the same person asking the same question again, while the
+	// data has not moved, does not need a second model run — the recorded SQL is
+	// re-executed (RBAC/RLS/masking intact) and its rows are hashed against the
+	// record before the answer is reused.
+	if !in.NoReplay && in.Resume == nil {
+		if replayed, ok := r.tryReplay(runCtx, userID, sessionID, question, actx, emit); ok {
+			return replayed
+		}
+	}
+
 	audit := s.Audit
 	run := audit.StartRun(ctx, userID, sessionID, actx, question)
 	if in.Resume != nil && in.Resume.FromRunID > 0 {
@@ -117,13 +145,6 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 	}
 	res.RunID = run.ID
 	res.SessionID = sessionID
-
-	runCtx := withRunScope(ctx, scope)
-	if timeout := r.timeout(agent); timeout > 0 {
-		var cancel context.CancelFunc
-		runCtx, cancel = context.WithTimeout(runCtx, timeout)
-		defer cancel()
-	}
 
 	started := time.Now()
 
@@ -166,6 +187,13 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 	// lastRows is the row count of the last successful SQL the run produced. It
 	// decides whether the run is worth remembering as an NL→SQL example.
 	lastRows := 0
+	// lastResult is the last data-tool output. Its row payload is hashed when the
+	// run is recorded for replay, so a later replay can prove the numbers have
+	// not moved before reusing the answer.
+	var lastResult map[string]any
+	// lastStatement is the canonical SQL the model authored (without the
+	// executor's row-limit wrapper): the form a replay re-executes.
+	var lastStatement string
 	// Duplicate detector: (tool, args) → step that already produced the result.
 	seen := map[string]int{}
 
@@ -284,6 +312,15 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 			if sql := sqlOf(out); sql != "" {
 				lastSQL = sql
 				lastRows = rowsOf(out)
+				if m, ok := out.(map[string]any); ok {
+					lastResult = m
+					// Prefer the canonical statement over the executor's wrapped
+					// SQL when recording a replay: replaying the wrapper would be
+					// rejected by the SELECT * guard on the next run.
+					if stmt, ok := m["statement"].(string); ok && strings.TrimSpace(stmt) != "" {
+						lastStatement = stmt
+					}
+				}
 			}
 
 			obs := ObserveEvent{StepNo: toolCalls, Status: "ok", Result: out}
@@ -343,6 +380,17 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 	// teach the model a wrong join.
 	if status == "done" {
 		s.autoCaptureMemory(runCtx, run, lastSQL, lastRows)
+		// Answer replay: record what this question resolved to, so asking it
+		// again within the TTL skips the model entirely.
+		var resultHash string
+		if lastResult != nil {
+			resultHash = resultFingerprint(lastResult["rows"])
+		}
+		replaySQL := lastStatement
+		if replaySQL == "" {
+			replaySQL = lastSQL
+		}
+		s.storeReplay(runCtx, run, plan, replaySQL, final, resultHash, lastRows, runArtifacts)
 	}
 
 	res.Status = status
@@ -711,9 +759,11 @@ func (r *Runtime) tokenBudget(agent *models.AIAgent) int {
 }
 
 // plan asks the model for a small structured plan before any tool runs. It is
-// deliberately cheap (≤4 steps, 400 completion tokens, temperature 0.1) and
+// deliberately cheap (≤4 steps, 400 completion tokens, temperature 0) and
 // degrades to the generic intent when the provider is unavailable, so planning
-// never blocks a run.
+// never blocks a run. Temperature is pinned rather than inherited: the plan is
+// a pure function of the question and the agent scope, so a re-ask must not be
+// able to change the route the run takes.
 func (r *Runtime) plan(ctx context.Context, pc *ProviderConfig, userID, runID int, question string, actx registry.AIContext, scope *runScope) (PlanEvent, int) {
 	fallback := PlanEvent{
 		RunID:   runID,
@@ -745,7 +795,7 @@ func (r *Runtime) plan(ctx context.Context, pc *ProviderConfig, userID, runID in
 		userTurn += "\n当前上下文：" + note
 	}
 
-	temp := 0.1
+	temp := 0.0
 	resp, err := r.svc.LLM.Chat(ctx, pc, &ChatRequest{
 		UserID:      userID,
 		Messages:    []ChatMessage{{Role: "system", Content: b.String()}, {Role: "user", Content: userTurn}},

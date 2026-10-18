@@ -444,6 +444,15 @@ export const zhDomain = {
     '语义模型是 Agent 的词汇表：没在里面声明的字段，它就看不见。可以从现有列自动生成一版，再补描述和口径。',
   'dataset.semantic.generate': '从数据集生成',
   'dataset.semantic.regenerate': '重建',
+  'dataset.semantic.osi_export_hint':
+    'OSI（Open Semantic Interchange）是跨工具的语义模型标准格式，导出的文件可以带到别的 BI 工具里',
+  'dataset.semantic.osi_import_hint':
+    '从 OSI 文件导入（.yaml/.yml/.json）。只导入与当前数据集对应的那一份，跨数据集的关系与指标会被列在结果里而不是静默丢弃',
+  'dataset.semantic.import_osi': '导入 OSI',
+  'dataset.semantic.import_created': '新建',
+  'dataset.semantic.import_updated': '更新',
+  'dataset.semantic.import_skipped': '跳过',
+  'dataset.semantic.import_empty': '导入完成，没有变化',
   'dataset.semantic.generated': '已生成语义模型草稿',
   'dataset.semantic.saved': '语义模型已保存',
   'dataset.semantic.published': '语义模型已发布',

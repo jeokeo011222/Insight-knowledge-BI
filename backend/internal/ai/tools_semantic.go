@@ -79,88 +79,122 @@ var grainAliases = map[string]string{
 
 func semanticQuery(s *Service) registry.ToolExecutor {
 	return func(ctx context.Context, args json.RawMessage) (*registry.ToolResult, error) {
-		var in semanticQueryInput
-		if err := json.Unmarshal(args, &in); err != nil {
-			return nil, fmt.Errorf("invalid arguments: %w", err)
-		}
-		if in.DatasetID <= 0 {
-			return nil, fmt.Errorf("dataset_id is required")
-		}
-		if s.Queries == nil {
-			return nil, fmt.Errorf("query engine is unavailable")
-		}
-		sem := semantic.New(s.DB, s.Log)
-		view, err := sem.Resolve(ctx, in.DatasetID, in.Model)
-		if err != nil {
-			// Tell the model what it *can* ask for, not just that it was wrong.
-			models2, lerr := sem.ListModels(ctx, in.DatasetID)
-			names := make([]string, 0, len(models2))
-			if lerr == nil {
-				for _, m := range models2 {
-					if m.Status == "published" {
-						names = append(names, m.Name)
-					}
-				}
-			}
-			payload := map[string]any{
-				"status":           "rejected_by_semantic_layer",
-				"code":             "MODEL_NOT_FOUND",
-				"message":          err.Error(),
-				"available_models": names,
-				"fallback":         "若该数据集尚未配置语义模型，请改用 schema_reader + query_executor",
-				"dataset_id":       in.DatasetID,
-			}
-			blob, _ := json.Marshal(payload)
-			return nil, fmt.Errorf("%s", blob)
-		}
-
-		qo, applied, err := semanticQueryObject(view, &in)
+		out, err := RunSemanticQuery(ctx, s, 0, args, false)
 		if err != nil {
 			return nil, err
 		}
-
-		built, _, err := queries.BuildDatasetSQL(ctx, s.DB, in.DatasetID, qo, queries.BuildOptions{
-			DefaultRowLimit: s.Config.AIQueryMaxRows,
-			MaxRow:          s.Config.AIQueryMaxRows,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if err := s.guardDatasetSQL(ctx, in.DatasetID, built.SQL); err != nil {
-			return nil, err
-		}
-
-		res, err := s.Queries.ExecuteReadOnlySQL(ctx, registry.UserIDFrom(ctx), built.SQL, queries.ReadOnlyOptions{
-			DatasetID:     in.DatasetID,
-			RowLimit:      s.Config.AIQueryMaxRows,
-			ExemptMasking: isAdminFrom(ctx),
-		})
-		if err != nil {
-			return nil, err
-		}
-		out := map[string]any{
-			"model":           view.Model.Name,
-			"manifest_hash":   view.Model.ManifestHash,
-			"sql":             res.SQL,
-			"generated_sql":   built.SQL,
-			"rows":            res.Data,
-			"colnames":        res.ColNames,
-			"rowcount":        res.RowCount,
-			"truncated":       res.Truncated,
-			"query_id":        res.QueryID,
-			"applied_filters": applied,
-			"query_mode":      "semantic",
-		}
-		if len(res.MaskedColumns) > 0 {
-			out["masked_columns"] = res.MaskedColumns
-			out["masking_note"] = "这些列的值已按合规规则脱敏，可用于计数/分组，不可用于识别个人"
-		}
+		duration, _ := out["duration_ms"].(int64)
 		return &registry.ToolResult{
 			Output:     out,
 			SideEffect: registry.Read,
-			DurationMS: res.DurationMS,
+			DurationMS: int(duration),
 		}, nil
 	}
+}
+
+// RunSemanticQuery executes (or, with dryRun, plans) a structured query against
+// a dataset's semantic model on behalf of the user in ctx.
+//
+// It is exported because the agent is not the only caller any more: the REST
+// endpoint /dataset/{pk}/semantic/query and the MCP server both need the same
+// behaviour, and a second implementation would eventually disagree with this
+// one about applied filters — the exact kind of drift the semantic layer exists
+// to prevent.
+//
+// datasetID, when positive, overrides the body: a path parameter must not be
+// silently overridden by a request field.
+func RunSemanticQuery(ctx context.Context, s *Service, datasetID int, args json.RawMessage, dryRun bool) (map[string]any, error) {
+	var in semanticQueryInput
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+	if datasetID > 0 {
+		in.DatasetID = datasetID
+	}
+	if in.DatasetID <= 0 {
+		return nil, fmt.Errorf("dataset_id is required")
+	}
+	if s.Queries == nil {
+		return nil, fmt.Errorf("query engine is unavailable")
+	}
+	sem := semantic.New(s.DB, s.Log)
+	view, err := sem.Resolve(ctx, in.DatasetID, in.Model)
+	if err != nil {
+		// Tell the caller what it *can* ask for, not just that it was wrong.
+		models2, lerr := sem.ListModels(ctx, in.DatasetID)
+		names := make([]string, 0, len(models2))
+		if lerr == nil {
+			for _, m := range models2 {
+				if m.Status == "published" {
+					names = append(names, m.Name)
+				}
+			}
+		}
+		payload := map[string]any{
+			"status":           "rejected_by_semantic_layer",
+			"code":             "MODEL_NOT_FOUND",
+			"message":          err.Error(),
+			"available_models": names,
+			"fallback":         "若该数据集尚未配置语义模型，请改用 schema_reader + query_executor",
+			"dataset_id":       in.DatasetID,
+		}
+		blob, _ := json.Marshal(payload)
+		return nil, fmt.Errorf("%s", blob)
+	}
+
+	qo, applied, err := semanticQueryObject(view, &in)
+	if err != nil {
+		return nil, err
+	}
+
+	built, _, err := queries.BuildDatasetSQL(ctx, s.DB, in.DatasetID, qo, queries.BuildOptions{
+		DefaultRowLimit: s.Config.AIQueryMaxRows,
+		MaxRow:          s.Config.AIQueryMaxRows,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// The plan must be executable: a dry run that skips the guard would hand
+	// back SQL that fails (or is refused) on the real call.
+	if err := s.guardDatasetSQL(ctx, in.DatasetID, built.SQL); err != nil {
+		return nil, err
+	}
+
+	base := map[string]any{
+		"model":           view.Model.Name,
+		"manifest_hash":   view.Model.ManifestHash,
+		"generated_sql":   built.SQL,
+		"applied_filters": applied,
+		"query_mode":      "semantic",
+	}
+	if dryRun {
+		base["dry_run"] = true
+		base["status"] = "planned"
+		base["columns"] = built.Projections
+		return base, nil
+	}
+
+	res, err := s.Queries.ExecuteReadOnlySQL(ctx, registry.UserIDFrom(ctx), built.SQL, queries.ReadOnlyOptions{
+		DatasetID:     in.DatasetID,
+		RowLimit:      s.Config.AIQueryMaxRows,
+		ExemptMasking: isAdminFrom(ctx),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := base
+	out["sql"] = res.SQL
+	out["rows"] = res.Data
+	out["colnames"] = res.ColNames
+	out["rowcount"] = res.RowCount
+	out["truncated"] = res.Truncated
+	out["query_id"] = res.QueryID
+	out["duration_ms"] = int64(res.DurationMS)
+	if len(res.MaskedColumns) > 0 {
+		out["masked_columns"] = res.MaskedColumns
+		out["masking_note"] = "这些列的值已按合规规则脱敏，可用于计数/分组，不可用于识别个人"
+	}
+	return out, nil
 }
 
 // semanticQueryObject translates the structured request into the builder's

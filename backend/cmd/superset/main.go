@@ -50,6 +50,7 @@ func rootCmd() *cobra.Command {
 	cmd.AddCommand(createAdminCmd())
 	cmd.AddCommand(setDatabaseURICmd())
 	cmd.AddCommand(versionCmd())
+	cmd.AddCommand(mcpCmd())
 	return cmd
 }
 

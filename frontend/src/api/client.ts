@@ -13,6 +13,13 @@ export interface RequestOptions {
   body?: unknown;
   /** Multipart payload; takes precedence over `body` and skips the JSON header. */
   formData?: FormData;
+  /**
+   * Verbatim request body (YAML, CSV, ...). Takes precedence over `body` so a
+   * file upload is not re-encoded as a JSON string. `contentType` defaults to
+   * text/plain.
+   */
+  rawText?: string;
+  contentType?: string;
   signal?: AbortSignal;
   /** Skip attaching the bearer token (used by the login call). */
   anonymous?: boolean;
@@ -110,7 +117,9 @@ class SupersetClient {
     opts: RequestOptions,
   ): Promise<Response> {
     const headers: Record<string, string> = { Accept: 'application/json' };
-    if (!opts.formData && opts.body !== undefined) {
+    if (opts.rawText !== undefined) {
+      headers['Content-Type'] = opts.contentType ?? 'text/plain';
+    } else if (!opts.formData && opts.body !== undefined) {
       headers['Content-Type'] = 'application/json';
     }
     const token = tokenStore.access;
@@ -125,7 +134,10 @@ class SupersetClient {
       headers,
       credentials: 'include',
       // FormData must be sent as-is so the browser sets the multipart boundary.
-      body: opts.formData ?? (opts.body === undefined ? undefined : JSON.stringify(opts.body)),
+      body:
+        opts.formData ??
+        opts.rawText ??
+        (opts.body === undefined ? undefined : JSON.stringify(opts.body)),
       signal: opts.signal,
     });
   }
@@ -204,6 +216,11 @@ class SupersetClient {
 
   post<T>(path: string, body?: unknown, opts?: Omit<RequestOptions, 'body'>): Promise<T> {
     return this.request<T>('POST', path, { ...opts, body });
+  }
+
+  /** POST a verbatim text body (importing a YAML/JSON file). */
+  postText<T>(path: string, text: string, contentType?: string): Promise<T> {
+    return this.request<T>('POST', path, { rawText: text, contentType });
   }
 
   /** POSTs a multipart form (file uploads). */

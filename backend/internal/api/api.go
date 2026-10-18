@@ -82,6 +82,7 @@ func RegisterAll(srv *server.Server, cfg *config.Config, log *zap.Logger, tr *i1
 		RegisterDatabases(api, deps)
 		RegisterDatasets(api, deps)
 		RegisterSemantic(api, deps)
+		RegisterDatasetRead(api, deps)
 		RegisterCharts(api, deps)
 		RegisterDashboards(api, deps)
 		RegisterPublicShares(api, deps)

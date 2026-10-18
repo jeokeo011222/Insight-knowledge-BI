@@ -36,6 +36,10 @@ type DatasetRef struct {
 
 // Export renders a dataset's published-or-draft models.
 func (s *Service) Export(ctx context.Context, datasetID int, format string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "osi", "osi-yaml", "osi-json":
+		return s.ExportOSI(ctx, datasetID, format)
+	}
 	var ds models.SqlaTable
 	if err := s.DB.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", datasetID).First(&ds).Error; err != nil {
 		return "", apperrors.NotFound("数据集 %d 不存在", datasetID)
@@ -80,6 +84,10 @@ type ImportResult struct {
 // name already exists is replaced field-for-field; the previous fields are
 // soft-deleted, never mutated, so a bad import can be diagnosed afterwards.
 func (s *Service) Import(ctx context.Context, datasetID int, payload, format string) (*ImportResult, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "osi", "osi-yaml", "osi-json":
+		return s.ImportOSI(ctx, datasetID, payload, format)
+	}
 	payload = strings.TrimSpace(payload)
 	if payload == "" {
 		return nil, apperrors.BadRequest("导入内容为空")
@@ -101,7 +109,18 @@ func (s *Service) Import(ctx context.Context, datasetID int, payload, format str
 	}
 
 	res := &ImportResult{}
-	for _, spec := range bundle.Models {
+	if err := s.importSpecs(ctx, datasetID, bundle.Models, "manual", res); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+// importSpecs upserts compiled specs into a dataset and then wires the
+// relationships. Shared by the bundle importer and the OSI importer so both
+// paths get the same second pass: a relationship can only be written once both
+// endpoints exist, and implementing that twice invites the two paths to drift.
+func (s *Service) importSpecs(ctx context.Context, datasetID int, specs []ModelSpec, source string, res *ImportResult) error {
+	for _, spec := range specs {
 		name := NormalizeModelName(spec.Name)
 		if name == "" {
 			res.Skipped = append(res.Skipped, "(空名称)")
@@ -137,19 +156,19 @@ func (s *Service) Import(ctx context.Context, datasetID int, payload, format str
 				Name: name, Description: spec.Description, PrimaryKey: spec.PrimaryKey,
 				Fields: fields,
 			}); uerr != nil {
-				return nil, uerr
+				return uerr
 			}
 			res.Updated = append(res.Updated, name)
 		case isNotFound(err):
 			if _, cerr := s.CreateModel(ctx, ModelInput{
 				DatasetID: datasetID, Name: name, Description: spec.Description,
-				PrimaryKey: spec.PrimaryKey, Fields: fields,
+				PrimaryKey: spec.PrimaryKey, Fields: fields, Source: source,
 			}); cerr != nil {
-				return nil, cerr
+				return cerr
 			}
 			res.Created = append(res.Created, name)
 		default:
-			return nil, err
+			return err
 		}
 	}
 
@@ -158,12 +177,12 @@ func (s *Service) Import(ctx context.Context, datasetID int, payload, format str
 	byName := map[string]int{}
 	list, err := s.ListModels(ctx, datasetID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	for _, m := range list {
 		byName[m.Name] = m.ID
 	}
-	for _, spec := range bundle.Models {
+	for _, spec := range specs {
 		fromID := byName[NormalizeModelName(spec.Name)]
 		for _, j := range spec.Joins {
 			toID, ok := byName[NormalizeModelName(j.To)]
@@ -187,11 +206,11 @@ func (s *Service) Import(ctx context.Context, datasetID int, payload, format str
 				JoinType: firstNonEmpty(j.JoinType, models.JoinManyToOne), Condition: j.Condition,
 			}
 			if err := s.DB.WithContext(ctx).Create(&rel).Error; err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
-	return res, nil
+	return nil
 }
 
 func isNotFound(err error) bool {

@@ -19,7 +19,7 @@ metric analysis, dashboard authoring, data screens and row-level security, all i
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange.svg)](LICENSE)
 
-**[中文](README.md)** ｜ **[English](README_EN.md)** ｜ **[User Manual](docs/manual/ZG-BI-User-Manual.md)** ｜ **[用户手册](docs/manual/智观BI-用户操作手册.md)**
+**[中文](README.md)** ｜ **[English](README_EN.md)** ｜ **[User Manual](Insight-knowledge-BI-User-Manual.md)** ｜ **[用户手册](智观BI-用户操作手册.md)**
 
 <img src="docs/images/02-workspace.png" alt="ZG BI workspace" width="100%" />
 
@@ -123,6 +123,44 @@ Providers, Agents, Skills and Tools are governed in four separate tables. Provid
 
 The audit log splits into **system operations** and **AI calls**: every agent run and every tool invocation is recorded.
 
+## Plug the BI into another agent (MCP)
+
+Beyond the built-in agent, the retrieval path can be attached to any MCP client
+(Claude Code, Cursor, or any Model Context Protocol host):
+
+```bash
+./superset-dev mcp            # stdio JSON-RPC, launched by the MCP host
+```
+
+Point the client at it with three environment variables:
+
+```json
+{
+  "mcpServers": {
+    "superset-bi": {
+      "command": "/path/to/superset-dev",
+      "args": ["mcp"],
+      "env": {
+        "SUPERSET_MCP_URL": "http://localhost:8088",
+        "SUPERSET_MCP_USERNAME": "admin",
+        "SUPERSET_MCP_PASSWORD": "admin"
+      }
+    }
+  }
+}
+```
+
+`SUPERSET_MCP_TOKEN` works too. The five exposed tools are **read-only**:
+`list_datasets`, `describe_dataset`, `dry_plan`, `semantic_query`, `run_sql`.
+
+The MCP process is a thin client of the REST API, so **every call runs as a real
+user**: permissions, row-level security, column masking, the SQL guard and the
+row cap all still apply — there is no side door.
+
+Semantic models also import/export as [OSI](https://github.com/open-semantic-interchange/OSI)
+0.2.0 (dataset → semantic model → `OSI` / `Import OSI`), so metrics survive a
+move to another BI tool.
+
 ## Architecture
 
 <div align="center">
@@ -188,8 +226,8 @@ Then open **http://localhost:3000** and log in with **`admin` / `admin`**.
 
 ## Documentation
 
-- [ZG BI User Manual (EN)](docs/manual/ZG-BI-User-Manual.md)
-- [智观 BI 用户操作手册 (中文)](docs/manual/智观BI-用户操作手册.md)
+- [ZG BI User Manual (EN)](Insight-knowledge-BI-User-Manual.md)
+- [智观 BI 用户操作手册 (中文)](智观BI-用户操作手册.md)
 
 ## Notes, licensing and acknowledgements
 

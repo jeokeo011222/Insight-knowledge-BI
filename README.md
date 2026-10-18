@@ -19,7 +19,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/jeokeo011222/Insight-knowledge-BI/pulls)
 [![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange.svg)](LICENSE)
 
-**[中文](README.md)** ｜ **[English](README_EN.md)** ｜ **[用户手册](docs/manual/智观BI-用户操作手册.md)** ｜ **[User Manual](docs/manual/ZG-BI-User-Manual.md)**
+**[中文](README.md)** ｜ **[English](README_EN.md)** ｜ **[用户手册](智观BI-用户操作手册.md)** ｜ **[User Manual](Insight-knowledge-BI-User-Manual.md)**
 
 <img src="docs/images/02-workspace.png" alt="智观 BI 工作台" width="100%" />
 
@@ -118,6 +118,50 @@ AI 供应商、Agent、Skill、工具四张表分开治理。供应商的 API Ke
 "是否已配置" 的布尔值；内置 Agent / Skill / 工具是**只读**的，只有自建实例可改可删。
 
 审计日志分「系统操作」与「AI 调用」两个页签，Agent 的每一次 run、每一次工具调用都有记录。
+
+## 把 BI 接到别的 Agent 上（MCP）
+
+除了内置的 Agent，取数能力也可以挂到一个外部的 MCP 客户端（Claude Code、Cursor、任何支持
+Model Context Protocol 的宿主）上，让它把「问数」当成一个工具用：
+
+```bash
+./superset-dev mcp            # stdio JSON-RPC，由 MCP 宿主启动
+```
+
+客户端配置里给三个环境变量即可：
+
+```json
+{
+  "mcpServers": {
+    "superset-bi": {
+      "command": "/path/to/superset-dev",
+      "args": ["mcp"],
+      "env": {
+        "SUPERSET_MCP_URL": "http://localhost:8088",
+        "SUPERSET_MCP_USERNAME": "admin",
+        "SUPERSET_MCP_PASSWORD": "admin"
+      }
+    }
+  }
+}
+```
+
+也可以用 `SUPERSET_MCP_TOKEN` 传一个长效 token。暴露的工具是**只读**的五个：
+
+| 工具 | 做什么 |
+|---|---|
+| `list_datasets` | 列出可读数据集 |
+| `describe_dataset` | 列、指标、语义模型字段与校验问题 |
+| `dry_plan` | 只出 SQL 与语义层自动加的过滤条件，不执行 |
+| `semantic_query` | 结构化取数（指标 + 维度 + 时间 + 过滤），不写 SQL |
+| `run_sql` | 数据集作用域的只读 SQL，过守卫、RLS 与脱敏 |
+
+关键点：MCP 进程只是后端 API 的一个瘦客户端，**每个调用都以真实用户身份执行** ——
+权限、行级安全、列级脱敏、SQL 守卫、行数上限都照常生效，不存在「换个入口就能绕过」的旁路。
+
+语义模型还能按 [OSI](https://github.com/open-semantic-interchange/OSI) 0.2.0 导入导出
+（数据集详情 → 语义模型 → `OSI` / `导入 OSI`），导出的文件可以带到别的 BI 工具里，
+换工具不用重建指标。
 
 ## 系统架构
 
@@ -227,8 +271,8 @@ superset-go/
 
 ## 文档
 
-- [智观 BI 用户操作手册](docs/manual/智观BI-用户操作手册.md) —— 中文，从登录到排障
-- [ZG BI User Manual](docs/manual/ZG-BI-User-Manual.md) —— English, same structure
+- [智观 BI 用户操作手册](智观BI-用户操作手册.md) —— 中文，从登录到排障
+- [ZG BI User Manual](Insight-knowledge-BI-User-Manual.md) —— English, same structure
 
 ## 常见问题
 

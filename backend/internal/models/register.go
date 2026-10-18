@@ -136,6 +136,9 @@ func init() {
 		// NL→SQL examples. Registered before the vector table so a deployment
 		// without pgvector still gets the memory feature.
 		&AISQLMemory{},
+		// Answer replay (回答记忆): the SQL and answer of the last identical
+		// question, reused while the data has not changed.
+		&AIRunReplay{},
 		&AIMetaEmbedding{},
 	)
 }

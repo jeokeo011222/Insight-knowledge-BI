@@ -7,7 +7,7 @@ ZG BI (English name ZG BI / Insight Knowledge BI) is an open-source, AI-native B
 
 This manual walks through everything in the left sidebar, in the order "left to right, top to bottom". You can read it cover to cover, or treat it as a dictionary — jump to whichever module you need.
 
-![Overall architecture](../images/architecture.svg)
+![Overall architecture](docs/images/architecture.svg)
 
 ---
 
@@ -68,7 +68,7 @@ The sidebar is grouped. Build a "mental map" first — every section below refer
 
 **What this step solves:** First prove "who you are", then decide "what you can see and change". In ZG BI all data is constrained by role permissions, so logging in isn't just a formality — it's the entry point to the permission system.
 
-![Login page](../images/01-login.png)
+![Login page](docs/images/01-login.png)
 
 ### 1.1 Logging in
 
@@ -83,7 +83,7 @@ The sidebar is grouped. Build a "mental map" first — every section below refer
 
 **What this step solves:** When you start work each day, you don't want to search from scratch. The Workspace surfaces the dashboards, charts, and datasets you touched recently, so you can pick up where you left off.
 
-![Workspace](../images/02-workspace.png)
+![Workspace](docs/images/02-workspace.png)
 
 The Workspace has several blocks:
 
@@ -106,7 +106,7 @@ From left to right, the header has: the sidebar collapse button, a breadcrumb (y
 
 **What this step solves:** The data lives in someone else's database, so the platform first needs to know "where to fetch from and with what credentials". A database connection is that "address sign + key"; all direct-connection datasets, SQL Lab, and AI question-answering build on top of it.
 
-![Three ingestion routes overview](../images/data-ingestion.svg)
+![Three ingestion routes overview](docs/images/data-ingestion.svg)
 
 ### 2.1 Adding a database connection
 
@@ -138,7 +138,7 @@ The platform bundles some real drivers that connect directly; another set of eng
 
 **What this step solves:** A database has dozens of tables, and business colleagues don't care about table names. A dataset turns data into "an object a business person can understand and a chart can consume directly". It's also the shared foundation for permissions, metric definitions, and AI question-answering.
 
-![Dataset list](../images/06-datasets.png)
+![Dataset list](docs/images/06-datasets.png)
 
 ### 3.1 Three ingestion routes, one destination
 
@@ -218,7 +218,7 @@ Explore's layout is fixed in three parts:
 
 **What this step solves:** You may not know which chart you want. The gallery lays out a Superset-style collection of chart types so you can "pick by looking", instead of "remembering type names".
 
-![Visualization gallery](../images/05-viz-gallery.png)
+![Visualization gallery](docs/images/05-viz-gallery.png)
 
 ### 5.1 What it looks like
 
@@ -255,7 +255,7 @@ Once you pick a type, it carries that type back into the current context so you 
 
 **What this step solves:** Once you've made lots of charts, you need to find them, edit them, and delete them. The chart list is your "shelf of work".
 
-![Chart list](../images/04-charts.png)
+![Chart list](docs/images/04-charts.png)
 
 ### 6.1 What you can do
 
@@ -273,7 +273,7 @@ Once you pick a type, it carries that type back into the current context so you 
 
 **What this step solves:** A single chart answers one question; a set of charts answers "how is this business doing right now". A dashboard assembles several charts into one page, with filters and layout.
 
-![Dashboard detail](../images/07-dashboard.png)
+![Dashboard detail](docs/images/07-dashboard.png)
 
 ### 7.1 List and creation
 
@@ -311,7 +311,7 @@ In edit mode:
 
 **What this step solves:** A dashboard is for "analysis"; a screen is for "display" — the big-font, high-contrast kind on a meeting-room wall or in an ops room. It's another expression of the same data.
 
-![Data screen](../images/08-screen.png)
+![Data screen](docs/images/08-screen.png)
 
 ### 8.1 List and two modes
 
@@ -366,13 +366,13 @@ The two are **mutually exclusive** — a single widget can only use one at a tim
 
 **What this step solves:** When you don't know SQL and don't want to configure charts, you just want to "ask directly". AI Analysis lets you ask in natural language, and the platform fetches the data, explains, and even generates a chart for you.
 
-![AI Analysis conversation](../images/03-ai-chat.png)
+![AI Analysis conversation](docs/images/03-ai-chat.png)
 
 ### 10.1 How it works (in plain language)
 
 AI Analysis doesn't "guess an answer once" — it works step by step, like an analyst:
 
-![Agent runtime](../images/agent-runtime.svg)
+![Agent runtime](docs/images/agent-runtime.svg)
 
 **Plan → Execute tools → Observe results → Decide whether it's enough to answer → Produce a conclusion**
 
@@ -430,7 +430,7 @@ Configuration entries and lists are all here; scheduling is executed by the back
 
 **What this step solves:** Who should see what and who should change what must be spelled out. This chapter is where you "hand out keys".
 
-![Users and roles](../images/09-access.png)
+![Users and roles](docs/images/09-access.png)
 
 Go to **System Settings → Users & Roles**. The page has **three tabs**: **Users / Roles / Row-Level Security**.
 
@@ -473,7 +473,7 @@ RLS lets you attach **row filters** to "a role + a table". That way the same tab
 
 **What this step solves:** For AI Analysis to be accurate, stable, and compliant, you must first configure "which model, what tools it may call, and where the boundaries are". This chapter is the AI "control console".
 
-![AI agent settings](../images/10-ai-settings.png)
+![AI agent settings](docs/images/10-ai-settings.png)
 
 Go to **System Settings → AI Agents**. The page has **four tabs**:
 

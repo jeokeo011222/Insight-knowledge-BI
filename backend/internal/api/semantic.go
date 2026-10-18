@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"superset/internal/ai"
+	"superset/internal/ai/registry"
 	"superset/internal/models"
 	apperrors "superset/internal/pkg/errors"
 	"superset/internal/queries"
@@ -59,6 +61,11 @@ func RegisterSemantic(r chi.Router, deps *Deps) {
 			Get("/gaps", a.scanGaps)
 		sr.With(security.RequirePermission(security.ActionWrite, security.ResSemanticLayer)).
 			Post("/gaps/apply", a.applyGap)
+		// The structured query path is a read: it takes metrics/dimensions/
+		// filters and never accepts SQL. Exposing it outside the agent is what
+		// makes the semantic model an API rather than a prompt decoration.
+		sr.With(security.RequirePermission(security.ActionRead, security.ResSemanticLayer)).
+			Post("/query", a.runQuery)
 	})
 
 	r.Route("/semantic", func(sr chi.Router) {
@@ -365,8 +372,11 @@ func (a *semanticAPI) exportBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ext := format
-	if ext == "yaml" {
+	switch format {
+	case "yaml", "osi", "osi-yaml":
 		ext = "yml"
+	case "osi-json":
+		ext = "json"
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition",
@@ -393,6 +403,40 @@ func (a *semanticAPI) importBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeResult(w, res)
+}
+
+// runQuery executes (or plans) a structured semantic query. `dry_run: true`
+// returns the generated SQL and the filters the semantic layer added, without
+// touching the warehouse — that is what an external agent needs in order to
+// decide whether to run it at all.
+func (a *semanticAPI) runQuery(w http.ResponseWriter, r *http.Request) {
+	datasetID, err := datasetIDParam(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeError(w, apperrors.BadRequest("读取请求内容失败：%s", err.Error()))
+		return
+	}
+	var probe struct {
+		DryRun bool `json:"dry_run"`
+	}
+	_ = json.Unmarshal(raw, &probe)
+
+	userID := 0
+	if u := security.UserFrom(r.Context()); u != nil {
+		userID = u.ID
+	}
+	svc := ai.NewService(a.deps.Config, a.deps.Log, a.deps.DB, a.deps.Cache, a.deps.Mgr)
+	ctx := registry.WithUserID(r.Context(), userID)
+	out, err := ai.RunSemanticQuery(ctx, svc, datasetID, raw, probe.DryRun)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeResult(w, out)
 }
 
 // scanGaps runs the W-07 gap scanner. Sampling is opt-in (`?sample=1`) and the

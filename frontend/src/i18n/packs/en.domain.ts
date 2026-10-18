@@ -446,6 +446,15 @@ export const enDomain = {
     'The semantic model is the Agent\'s vocabulary: fields not declared here do not exist for it. Generate one from the existing columns, then add descriptions and definitions.',
   'dataset.semantic.generate': 'Generate from dataset',
   'dataset.semantic.regenerate': 'Regenerate',
+  'dataset.semantic.osi_export_hint':
+    'OSI (Open Semantic Interchange) is the cross-tool semantic model format — export it to move the model into another BI tool',
+  'dataset.semantic.osi_import_hint':
+    'Import an OSI file (.yaml/.yml/.json). Only the dataset that corresponds to this one is imported; cross-dataset relationships and metrics are listed in the result instead of being dropped silently',
+  'dataset.semantic.import_osi': 'Import OSI',
+  'dataset.semantic.import_created': 'created',
+  'dataset.semantic.import_updated': 'updated',
+  'dataset.semantic.import_skipped': 'skipped',
+  'dataset.semantic.import_empty': 'Import finished with no changes',
   'dataset.semantic.generated': 'Draft semantic model generated',
   'dataset.semantic.saved': 'Semantic model saved',
   'dataset.semantic.published': 'Semantic model published',
