@@ -39,13 +39,16 @@ func TestGuardSQLRejectsOutOfScopeTables(t *testing.T) {
 }
 
 func TestGuardSQLAllowsDatasetAndCTEs(t *testing.T) {
+	// Columns are spelled out on purpose: `SELECT *` is a separate policy
+	// (TestGuardRejectsWildcardProjection) and mixing it into this table would
+	// hide which rule failed.
 	cases := []string{
-		`SELECT * FROM orders`,
-		`SELECT * FROM "orders"`,
+		`SELECT id FROM orders`,
+		`SELECT id FROM "orders"`,
 		`SELECT o.amount FROM public.orders o WHERE o.amount > 0`,
-		`WITH recent AS (SELECT * FROM orders WHERE created_at > '2026-01-01') SELECT count(*) FROM recent`,
-		`WITH a AS (SELECT * FROM orders), b AS (SELECT * FROM a) SELECT * FROM b`,
-		`SELECT * FROM (SELECT * FROM orders) x ORDER BY x.amount LIMIT 10`,
+		`WITH recent AS (SELECT id FROM orders WHERE created_at > '2026-01-01') SELECT count(*) FROM recent`,
+		`WITH a AS (SELECT id FROM orders), b AS (SELECT id FROM a) SELECT id FROM b`,
+		`SELECT x.amount FROM (SELECT amount FROM orders) x ORDER BY x.amount LIMIT 10`,
 		// A string literal that mentions a table is not a table reference.
 		`SELECT 'from customers' AS label FROM orders`,
 		// Comments are ignored.
@@ -54,7 +57,7 @@ func TestGuardSQLAllowsDatasetAndCTEs(t *testing.T) {
 		`SELECT EXTRACT(YEAR FROM created_at) AS y, COUNT(*) FROM orders GROUP BY 1`,
 		`SELECT SUBSTRING(name FROM 1 FOR 2) FROM orders`,
 		`SELECT TRIM(BOTH ' ' FROM name) FROM orders`,
-		`SELECT * FROM orders WHERE amount IN (SELECT amount FROM orders)`,
+		`SELECT id FROM orders WHERE amount IN (SELECT amount FROM orders)`,
 	}
 	for _, sql := range cases {
 		if err := guardFixture(sql); err != nil {
@@ -139,7 +142,7 @@ func TestGuardErrorIsMachineReadable(t *testing.T) {
 // TestGuardAllowsVirtualDataset ensures the whitelist is skipped (deliberately)
 // for a virtual dataset, whose physical table is unknown.
 func TestGuardAllowsVirtualDataset(t *testing.T) {
-	if err := GuardSQL(SQLGuardInput{Statement: `SELECT * FROM anywhere`}); err != nil {
+	if err := GuardSQL(SQLGuardInput{Statement: `SELECT id FROM anywhere`}); err != nil {
 		t.Fatalf("virtual dataset should not be table-restricted: %v", err)
 	}
 }
@@ -159,6 +162,43 @@ func TestTokenizeHandlesQuoting(t *testing.T) {
 	for _, want := range []string{"weird name", "back", "brack", "t"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in %q", want, joined)
+		}
+	}
+}
+
+// A wildcard projection must be rejected: column hiding is enforced by name, so
+// `SELECT *` would hand back exactly the columns the dataset marked hidden.
+func TestGuardRejectsWildcardProjection(t *testing.T) {
+	cases := []string{
+		"SELECT * FROM birth_names",
+		"SELECT b.* FROM birth_names b",
+		"SELECT name, * FROM birth_names",
+		"SELECT x FROM (SELECT * FROM birth_names) s",
+		"SELECT * FROM birth_names UNION SELECT * FROM birth_names",
+	}
+	for _, sql := range cases {
+		err := GuardSQL(SQLGuardInput{Statement: sql, AllowedTables: []string{"birth_names"}})
+		var guardErr *SQLGuardError
+		if !errors.As(err, &guardErr) {
+			t.Fatalf("%s: expected a guard error, got %v", sql, err)
+		}
+		if guardErr.Code != GuardSelectStar {
+			t.Fatalf("%s: code = %s, want %s", sql, guardErr.Code, GuardSelectStar)
+		}
+	}
+}
+
+// The star inside an aggregate or a multiplication is not a projection and must
+// keep working, otherwise the guard would reject normal analytics.
+func TestGuardAllowsStarInsideExpressions(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT COUNT(*) AS c FROM birth_names",
+		"SELECT name, COUNT(*) FROM birth_names GROUP BY name",
+		"SELECT num * 2 AS doubled FROM birth_names",
+		"SELECT EXTRACT(YEAR FROM ds) AS y, COUNT(*) FROM birth_names GROUP BY 1",
+	} {
+		if err := GuardSQL(SQLGuardInput{Statement: sql, AllowedTables: []string{"birth_names"}}); err != nil {
+			t.Fatalf("%s: unexpected rejection: %v", sql, err)
 		}
 	}
 }

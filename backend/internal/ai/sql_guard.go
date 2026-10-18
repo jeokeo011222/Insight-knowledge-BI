@@ -383,6 +383,7 @@ func rejectWildcardProjection(tokens []guardToken) error {
 	depth := 0
 	// inSelect[d] is true while we are between SELECT and FROM at depth d.
 	inSelect := map[int]bool{}
+	var prev guardToken
 	for _, tok := range tokens {
 		switch {
 		case !tok.ident && tok.text == "(":
@@ -399,15 +400,31 @@ func rejectWildcardProjection(tokens []guardToken) error {
 			// `EXTRACT(YEAR FROM x)` is inside parentheses, so its FROM belongs
 			// to a deeper depth and cannot close the outer select list.
 			inSelect[depth] = false
-		case !tok.ident && tok.text == "*" && inSelect[depth]:
+		case !tok.ident && tok.text == "*" && inSelect[depth] && startsProjectionItem(prev):
 			return &SQLGuardError{
 				Code: GuardSelectStar, Phase: "sql_projection",
 				Message: "不允许 SELECT *：它会把对 Agent 隐藏的列一起查出来",
 				Hint:    "按 schema_reader 返回的列名显式列出需要的列；计数请用 COUNT(*)",
 			}
 		}
+		prev = tok
 	}
 	return nil
+}
+
+// startsProjectionItem reports whether prev leaves the `*` in item position
+// (a wildcard) rather than mid-expression (a multiplication, e.g. `num * 2`).
+func startsProjectionItem(prev guardToken) bool {
+	if prev.text == "" {
+		return true
+	}
+	if prev.text == "," || prev.text == "." {
+		return true
+	}
+	if prev.ident && (strings.EqualFold(prev.text, "select") || strings.EqualFold(prev.text, "distinct")) {
+		return true
+	}
+	return false
 }
 
 // AvailableTables returns the whitelist in a stable form for error payloads.

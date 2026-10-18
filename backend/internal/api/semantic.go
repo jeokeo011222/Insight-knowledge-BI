@@ -407,7 +407,13 @@ func (a *semanticAPI) scanGaps(w http.ResponseWriter, r *http.Request) {
 	sample := r.URL.Query().Get("sample") == "1" || strings.EqualFold(r.URL.Query().Get("sample"), "true")
 	scanner := semantic.NewScanner(a.deps.DB, a.deps.Log)
 	if sample {
-		scanner.Sample = a.sampleColumn
+		// The sampler runs as the requesting user: passing 0 made every sample
+		// call fail authorization, so enum gaps never appeared and the failure
+		// was only visible at debug level.
+		userID, exempt := userIDOf(r), maskExempt(r)
+		scanner.Sample = func(ctx context.Context, datasetID int, column string, n int) ([]string, error) {
+			return a.sampleColumn(ctx, userID, exempt, datasetID, column, n)
+		}
 	}
 	report, err := scanner.Scan(r.Context(), datasetID, sample)
 	if err != nil {
@@ -419,7 +425,7 @@ func (a *semanticAPI) scanGaps(w http.ResponseWriter, r *http.Request) {
 
 // sampleColumn reads up to n distinct values of one column through the shared
 // read-only path, so RLS, row limits and masking all apply.
-func (a *semanticAPI) sampleColumn(ctx context.Context, datasetID int, column string, n int) ([]string, error) {
+func (a *semanticAPI) sampleColumn(ctx context.Context, userID int, exempt bool, datasetID int, column string, n int) ([]string, error) {
 	if a.deps.DB == nil {
 		return nil, nil
 	}
@@ -435,10 +441,10 @@ func (a *semanticAPI) sampleColumn(ctx context.Context, datasetID int, column st
 		return nil, err
 	}
 	exec := queries.NewExecutor(a.deps.DB, a.deps.Log, a.deps.Cache, a.deps.Mgr)
-	res, err := exec.ExecuteReadOnlySQL(ctx, 0, built.SQL, queries.ReadOnlyOptions{
+	res, err := exec.ExecuteReadOnlySQL(ctx, userID, built.SQL, queries.ReadOnlyOptions{
 		DatasetID:     datasetID,
 		RowLimit:      n + 1,
-		ExemptMasking: true,
+		ExemptMasking: exempt,
 	})
 	if err != nil {
 		return nil, err

@@ -171,12 +171,12 @@ func (s *Service) modelNames(ctx context.Context, datasetID int) (map[int]string
 
 // ModelInput is the create/update payload.
 type ModelInput struct {
-	DatasetID   int            `json:"dataset_id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	PrimaryKey  string         `json:"primary_key"`
-	Status      string         `json:"status"`
-	Fields      []FieldInput   `json:"fields"`
+	DatasetID      int            `json:"dataset_id"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	PrimaryKey     string         `json:"primary_key"`
+	Status         string         `json:"status"`
+	Fields         []FieldInput   `json:"fields"`
 	DefaultFilters datatypes.JSON `json:"default_filters"`
 }
 
@@ -328,11 +328,18 @@ func (s *Service) DeleteModel(ctx context.Context, id int) error {
 }
 
 func insertFields(tx *gorm.DB, modelID int, fields []FieldInput) error {
+	seen := map[string]int{}
 	for i, f := range fields {
 		name := strings.TrimSpace(f.Name)
 		if name == "" {
 			return apperrors.BadRequest("第 %d 行的字段名为空", i+1)
 		}
+		// Catch duplicates here: the partial unique index would reject them as a
+		// 500, and the operator would see a database error instead of the row.
+		if prev, ok := seen[name]; ok {
+			return apperrors.BadRequest("字段 %q 在第 %d 行与第 %d 行重复", name, prev, i+1)
+		}
+		seen[name] = i + 1
 		kind := f.Kind
 		if kind == "" {
 			kind = models.FieldKindColumn
@@ -345,7 +352,7 @@ func insertFields(tx *gorm.DB, modelID int, fields []FieldInput) error {
 			ModelID: modelID, Name: name, Kind: kind,
 			Expression: f.Expression, Type: f.Type, Description: f.Description,
 			Unit: f.Unit, Hidden: f.Hidden,
-			PIILevel: firstNonEmpty(f.PIILevel, "none"),
+			PIILevel:   firstNonEmpty(f.PIILevel, "none"),
 			DefaultAgg: f.DefaultAgg, IsDttm: f.IsDttm || kind == models.FieldKindTime,
 			SortOrder: order,
 		}
@@ -489,9 +496,9 @@ func (s *Service) ColdStart(ctx context.Context, datasetID int, force bool) (*Mo
 			rule := models.SemanticRule{
 				Scope: models.RuleScopeModel, DatasetID: datasetID, ModelID: m.ID,
 				Category: models.RuleDefaultFilter, Title: "排除已删除记录",
-				Body:     fmt.Sprintf("默认过滤 `%s IS NULL`，统计口径不含软删除记录。", col),
-				Spec:     mustJSON(FilterSpec{Field: col, Op: "is_null", Reason: "默认排除软删除记录"}),
-				Status:   "active", Evidence: "cold_start: 检测到软删除列",
+				Body:   fmt.Sprintf("默认过滤 `%s IS NULL`，统计口径不含软删除记录。", col),
+				Spec:   mustJSON(FilterSpec{Field: col, Op: "is_null", Reason: "默认排除软删除记录"}),
+				Status: "active", Evidence: "cold_start: 检测到软删除列",
 			}
 			if err := tx.Create(&rule).Error; err != nil {
 				return err

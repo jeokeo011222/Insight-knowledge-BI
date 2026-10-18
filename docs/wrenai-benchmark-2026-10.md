@@ -322,7 +322,7 @@ var sqlKeywordBlocklist = regexp.MustCompile(`(?i)\b(insert|update|...)\b`)
 
 > 命名：W-01 ~ W-10。每条都给出「现状 → Wren 依据 → 方案 → 验收 → 成本」。成本按 1 人 1 天 = 1d 估。
 >
-> **实施状态（2026-10-18）**：W-01 / W-02 / W-03 / W-04 与 W-09 已落地并通过自查（`go build`/`go vet`/`go test ./...`/`tsc --noEmit`/`vite build` 全绿），逐项证据见 `docs/verification.md` 第 28 节；W-05~W-08、W-10 未开始，原因见 §10。
+> **实施状态（2026-10-18）**：W-01 ~ W-09 全部落地并通过自查（`go build`/`go vet`/`go test ./...`/`tsc --noEmit`/`vite build` 全绿），逐项证据见 `docs/verification.md` 第 28 节（P0）与第 29 节（W-05~W-08）；仅 W-10（OSI 导入 / MCP 暴露）未开始，原因见 §10。
 
 ### P0：两周内应该做完（安全与上下文地基）
 
@@ -663,12 +663,12 @@ semantic_rules(id, scope[global|dataset|model], category, body, status, version)
 | W-03 | NL→SQL 记忆库 | **已落地** | `models/ai.go`（`AISQLMemory`）、`ai/memory.go`、`agent_planner.go`、`agent_runtime.go`、`api/ai.go`、`AgentPanel.tsx` |
 | W-04 | 上下文检索（定向切片替代全量 dump） | **已落地** | `ai/schema_context.go`、`ai/textmatch.go`、`ai/tools_read_extra.go`、`ai/builtin.go` |
 | W-09a | 先测基线 | **已落地**（5 题样本；全量待部署新构建后跑） | `docs/eval-baseline-20261018-1635.json` |
-| W-05 | 语义模型 MDL-lite | 未开始 | — |
-| W-06 | 语义查询接口 | 未开始 | — |
-| W-07 | 口径治理工作台 | 未开始 | — |
-| W-08 | 业务规则 | 未开始 | — |
+| W-05 | 语义模型 MDL-lite | **已落地** | `models/semantic_model.go`、`semantic/manifest.go`、`semantic/service.go`、`api/semantic.go`、`DatasetSemanticPanel.tsx` |
+| W-06 | 语义查询接口 | **已落地**（Agent 实测走 `semantic_query`） | `semantic/tools_semantic.go`、`ai/semantic_context.go`、`queries/sql_builder.go` |
+| W-07 | 口径治理工作台（第一期：缺口扫描 + 逐题确认） | **已落地**（数据集内页签，无独立菜单） | `semantic/gaps.go`、`DatasetSemanticPanel.tsx`（缺口页签） |
+| W-08 | 业务规则 | **已落地** | `semantic/rules.go`、`agent_planner.go`（提示通道）、`tools_semantic.go`（执行通道） |
 | W-09 | 评测换代 | **已落地**（结果级 + 确定性 + 成本指标） | `docs/eval_nl2sql.py` |
-| W-10 | OSI/MCP 互操作 | 未开始 | — |
+| W-10 | OSI/MCP 互操作 | 未开始 | 导出格式（YAML/JSON）已稳定，可在此基础上做 OSI 映射；MCP server 未动 |
 
 **为什么 P0 先做、P1 后做**：W-01/W-02 是会出事的缺陷（PII 原文进回答与审计日志、跨表读）；W-03/W-04 是「会变准」且互不依赖的独立增量；W-05~W-08 相互依赖（语义查询依赖模型，规则的双通道消费依赖语义查询），而且都需要补 UI 才能被真实使用——按 §7 的排序逻辑，它们必须等前面积累的描述/枚举/规则数据，否则会变成第二个「有表无实现」的空壳。
 
@@ -676,3 +676,17 @@ semantic_rules(id, scope[global|dataset|model], category, body, status, version)
 
 1. `pii_level` 没有做成独立的判断依据，而是与 `mask_type` 合并成 `EffectiveMaskRule`：显式 `mask_type` 优先，`pii_level=high` 只在没有显式规则时兜底为 `full`。两个平行的敏感度字段必然漂移。
 2. 向量召回没有硬上：部署里没有 embedding provider，pgvector 也可能没装。Wren 自己也接受「无向量时退化为词重叠」，所以 `textmatch.go` 用 ASCII 词 + 中文二元组的覆盖率打分，`meta_search` 明确返回 `retriever: "lexical"`，不假装是向量检索。
+
+**W-05~W-08 落地时暴露的四个真 bug（比功能本身更值得记）**：
+
+1. **软删除 + 普通唯一索引 = 一次性资源**：`semantic_models`/`semantic_fields` 上的 `UNIQUE(dataset_id, name)`、`UNIQUE(model_id, name)` 不排除 `deleted=true`。后果有两层：保存字段（整表替换 = 软删旧行 + 插同名新行）每次都 500；删掉模型后重新冷启动永远 409，用户看不到任何冲突行。修法是把两个键改成 `WHERE deleted = false` 的部分唯一索引（`pkg/database.migrateSemanticIndexes`，AutoMigrate 表达不了），并把 GORM 的 `uniqueIndex` 标签去掉，否则下次启动又会建回普通唯一索引。
+2. **规则的存储形状与解析形状不一致**：`normalizeSpec` 统一存成数组，`Compile` 却按单个对象反序列化。于是**每一条通过 API 建的 default_filter 规则**都会在清单里变成 `DEFAULT_FILTER_UNKNOWN_COLUMN` 错误，模型永远发布不了——功能「有表有接口有 UI」但完全不可用。现在 `filterSpecs` 同时接受对象与数组，并把「spec 坏了」和「过滤的列不存在」拆成两个错误码（前者是 JSON 问题，后者是 schema 漂移，修法不同）。
+3. **校验了没解析的表达式**：未知列检查看的是 `f.Expression`，而 column/time 字段的透传形态表达式为空（等价于同名列）。结果是列改名/删列后，指向幽灵列的字段时间接通过校验，直到执行期才报 SQL 错。现在校验**解析后**的表达式，且只在它是裸标识符时校验（`SUM(x)`、`date_trunc(...)` 不能按列名判定）。
+4. **构建器只认 JSON map，不认自己定义的强类型**：`columnItem` 支持 `map[string]any` 却不支持 `AdhocColumn`，而 `metricItem` 两者都支持。语义查询工具用 Go 结构体构造 `Groupby`，于是**每一次 semantic_query 都返回 `Unsupported column definition`**，Agent 只能退回自由 SQL——工具在目录里、能调用、但从不成功。补上 `case AdhocColumn` 并加了三条构建器单测（强类型 / map / 表达式不被引号包住）。
+
+**这一批的边界（刻意不做）**：
+
+- 语义模型只覆盖单数据集内的模型与模型间关系，不做跨数据集联邦；跨库 JOIN 仍走自由 SQL。
+- 缺口扫描的采样是 opt-in（`?sample=1`），因为读真实行需要授权；个人信息类列永不采样（草稿会把原始值写进治理报告）。
+- 治理台做成数据集详情里的页签，而不是独立菜单：指标字典页面的教训是「没有任务起点的治理页面 = 孤儿页面」。
+- W-10 没动：导出（YAML/JSON）已经稳定，但 OSI 是外部规范，MCP server 是另一条进程边界，单独排期比塞进本轮更稳。

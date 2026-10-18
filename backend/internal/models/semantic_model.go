@@ -20,8 +20,12 @@ import (
 // cross-dataset graph is deferred until there is a real caller for it).
 type SemanticModel struct {
 	BaseModel
-	DatasetID   int    `gorm:"column:dataset_id;not null;index:ix_semantic_models_dataset;uniqueIndex:uq_semantic_models_dataset_name" json:"dataset_id"`
-	Name        string `gorm:"column:name;size:64;not null;uniqueIndex:uq_semantic_models_dataset_name" json:"name"`
+	// Uniqueness is per (dataset, name) among *live* rows only. The partial
+	// unique index lives in pkg/database.migrateSemanticIndexes: a GORM
+	// uniqueIndex tag would create a plain one, and soft-deleted rows would then
+	// occupy the key forever ("delete, then regenerate" → duplicate key).
+	DatasetID   int    `gorm:"column:dataset_id;not null;index:ix_semantic_models_dataset" json:"dataset_id"`
+	Name        string `gorm:"column:name;size:64;not null" json:"name"`
 	Description string `gorm:"column:description;type:text" json:"description"`
 	// PrimaryKey names a declared field (usually a column field). It is required
 	// for many-to-many relationships to be valid — see Validate.
@@ -60,8 +64,11 @@ const (
 // SemanticField is one declared attribute of a model.
 type SemanticField struct {
 	BaseModel
-	ModelID int    `gorm:"column:model_id;not null;index;uniqueIndex:uq_semantic_fields_model_name" json:"model_id"`
-	Name    string `gorm:"column:name;size:64;not null;uniqueIndex:uq_semantic_fields_model_name" json:"name"`
+	// Same partial-unique rule as SemanticModel: rewriting a model soft-deletes
+	// every field row and re-inserts the same names, so a plain
+	// UNIQUE(model_id, name) rejects the second save with a duplicate key.
+	ModelID int    `gorm:"column:model_id;not null;index" json:"model_id"`
+	Name    string `gorm:"column:name;size:64;not null" json:"name"`
 	Kind    string `gorm:"column:kind;size:16;not null;default:column" json:"kind"`
 	// Expression is the SQL fragment this field compiles to. Empty means "the
 	// physical column with the same name" for column/time kinds, and is invalid

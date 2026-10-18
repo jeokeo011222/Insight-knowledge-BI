@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -42,11 +43,15 @@ const (
 	IssueMissingPrimaryKey   = "MISSING_PRIMARY_KEY"
 	IssueManyToManyNoPK      = "MANY_TO_MANY_WITHOUT_PK"
 	IssueDanglingJoin        = "DANGLING_JOIN"
-	IssueInvalidPII           = "INVALID_PII_LEVEL"
+	IssueInvalidPII          = "INVALID_PII_LEVEL"
 	IssueInvalidEnum         = "INVALID_ENUM_VALUES"
 	IssueNoMetric            = "NO_METRIC"
 	IssueNoRelationship      = "NO_RELATIONSHIP"
-	IssueDefaultFilterBroken = "DEFAULT_FILTER_UNKNOWN_COLUMN"
+	IssueDefaultFilterBroken = "DEFAULT_FILTER_BROKEN"
+	// IssueFilterUnknownColumn is distinct from IssueDefaultFilterBroken on
+	// purpose: "the spec is not JSON" and "the spec points at a column that does
+	// not exist" need different fixes, and the old code conflated them.
+	IssueFilterUnknownColumn = "DEFAULT_FILTER_UNKNOWN_COLUMN"
 	IssueFieldNoDescription  = "FIELD_WITHOUT_DESCRIPTION"
 	IssueHiddenPrimaryKey    = "HIDDEN_PRIMARY_KEY"
 )
@@ -114,10 +119,10 @@ type RuleSpec struct {
 // CompileInput is everything Compile needs. Physical columns are passed in
 // rather than fetched so the function stays pure and testable.
 type CompileInput struct {
-	Model        models.SemanticModel
-	Fields       []models.SemanticField
+	Model         models.SemanticModel
+	Fields        []models.SemanticField
 	Relationships []models.SemanticRelationship
-	Rules        []models.SemanticRule
+	Rules         []models.SemanticRule
 	// PhysicalColumns is the set of column names that exist on the dataset's
 	// physical table. Virtual datasets pass nil, which downgrades the
 	// unknown-column check to a warning instead of silently passing.
@@ -189,12 +194,14 @@ func Compile(in CompileInput) (*ModelSpec, []Issue) {
 					"metric/dimension 必须给出 SQL 表达式，例如 SUM(amount)")
 			}
 		}
-		if expr != "" && in.PhysicalColumns != nil && strings.TrimSpace(f.Expression) == "" {
-			if !in.PhysicalColumns[expr] {
-				add("error", IssueUnknownColumn, name,
-					fmt.Sprintf("字段 %q 指向的列 %q 不在数据集里", name, expr),
-					"改表达式或重新同步数据集列")
-			}
+		// Validate the *resolved* expression, not the raw one. A column field
+		// with an empty expression is a passthrough to the physical column of the
+		// same name, so checking f.Expression skipped exactly the case that
+		// matters most (a stale field left behind by a column rename).
+		if in.PhysicalColumns != nil && isBareIdentifier(expr) && !in.PhysicalColumns[expr] {
+			add("error", IssueUnknownColumn, name,
+				fmt.Sprintf("字段 %q 指向的列 %q 不在数据集里", name, expr),
+				"改表达式或重新同步数据集列")
 		}
 		if p := f.PIILevel; p != "" && p != "none" && p != "low" && p != "high" {
 			add("error", IssueInvalidPII, name, fmt.Sprintf("字段 %q 的 pii_level=%q 不合法", name, p),
@@ -281,13 +288,24 @@ func Compile(in CompileInput) (*ModelSpec, []Issue) {
 			continue
 		}
 		if rule.Category == models.RuleDefaultFilter {
-			if fs, ok := DecodeFilterSpec(rule.Spec); ok {
-				fs.Reason = firstNonEmpty(fs.Reason, rule.Title, rule.Body)
-				spec.Filters = append(spec.Filters, fs)
-			} else if len(rule.Spec) > 0 && string(rule.Spec) != "null" && string(rule.Spec) != "{}" {
+			// normalizeSpec stores a *list* of filters, so decoding into a single
+			// object silently failed for every rule created through the API —
+			// which turned every default filter into DEFAULT_FILTER_BROKEN and
+			// blocked publishing. Accept both shapes.
+			filters, ok := filterSpecs(rule.Spec)
+			if !ok {
 				add("error", IssueDefaultFilterBroken, rule.Title,
 					fmt.Sprintf("规则 %q 的 spec 无法解析为默认过滤条件", firstNonEmpty(rule.Title, rule.Category)),
-					`spec 形如 {"field":"deleted_at","op":"is_null"}`)
+					`spec 形如 {"field":"deleted_at","op":"is_null"} 或该对象的数组`)
+			}
+			for _, fs := range filters {
+				fs.Reason = firstNonEmpty(fs.Reason, rule.Title, rule.Body)
+				if in.PhysicalColumns != nil && !declared[fs.Field] && !in.PhysicalColumns[fs.Field] {
+					add("error", IssueFilterUnknownColumn, fs.Field,
+						fmt.Sprintf("规则 %q 过滤的列 %q 不在数据集里", firstNonEmpty(rule.Title, rule.Category), fs.Field),
+						"改成真实存在的列，或停用该规则")
+				}
+				spec.Filters = append(spec.Filters, fs)
 			}
 		}
 		spec.Rules = append(spec.Rules, RuleSpec{Category: rule.Category, Title: rule.Title, Body: rule.Body})
@@ -336,19 +354,50 @@ func hashManifest(spec *ModelSpec) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// DecodeFilterSpec parses the machine-readable half of a rule.
-func DecodeFilterSpec(raw []byte) (FilterSpec, bool) {
-	if len(raw) == 0 {
-		return FilterSpec{}, false
+// filterSpecs parses the machine-readable half of a default_filter rule.
+//
+// Two shapes are legal: a single object (hand-written / imported manifests) and
+// a list (what normalizeSpec stores from the API). A spec that is present but
+// points at no field or no operator is a *broken* spec, not an empty one — the
+// caller must be able to tell those apart, hence the bool.
+func filterSpecs(raw []byte) ([]FilterSpec, bool) {
+	trimmed := strings.TrimSpace(string(raw))
+	switch trimmed {
+	case "", "null", "{}", "[]":
+		return nil, true
 	}
-	var fs FilterSpec
-	if err := json.Unmarshal(raw, &fs); err != nil {
-		return FilterSpec{}, false
+	if strings.HasPrefix(trimmed, "[") {
+		var list []FilterSpec
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, false
+		}
+		for _, fs := range list {
+			if strings.TrimSpace(fs.Field) == "" || strings.TrimSpace(fs.Op) == "" {
+				return nil, false
+			}
+		}
+		return list, true
 	}
-	if strings.TrimSpace(fs.Field) == "" || strings.TrimSpace(fs.Op) == "" {
-		return FilterSpec{}, false
+	if strings.HasPrefix(trimmed, "{") {
+		var one FilterSpec
+		if err := json.Unmarshal(raw, &one); err != nil {
+			return nil, false
+		}
+		if strings.TrimSpace(one.Field) == "" || strings.TrimSpace(one.Op) == "" {
+			return nil, false
+		}
+		return []FilterSpec{one}, true
 	}
-	return fs, true
+	return nil, false
+}
+
+// bareIdentifier matches a plain column reference. Anything containing
+// punctuation is treated as an expression and left unvalidated: `SUM(amount)` or
+// `date_trunc('day', ds)` cannot be checked against the column list by name.
+var bareIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func isBareIdentifier(expr string) bool {
+	return bareIdentifier.MatchString(strings.TrimSpace(expr))
 }
 
 func stringSlice(raw []byte) ([]string, bool) {

@@ -3,6 +3,8 @@ backend/superset-dev
 backend/superset-dev.exe
 backend/*.exe
 frontend/dist/
+# 重新构建时留下的旧产物备份目录（如 dist_prev_1737），同样不入库
+frontend/dist_prev_*/
 frontend/.vite/
 frontend/node_modules/
 

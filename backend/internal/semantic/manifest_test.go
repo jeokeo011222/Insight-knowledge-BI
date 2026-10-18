@@ -197,10 +197,10 @@ func TestCompileRejectsBrokenDefaultFilterSpec(t *testing.T) {
 
 func TestNormalizeModelName(t *testing.T) {
 	cases := map[string]string{
-		"Orders":        "orders",
-		"sales order":   "sales_order",
-		"2024 revenue":  "m_2024_revenue",
-		"客户订单":          "model",
+		"Orders":         "orders",
+		"sales order":    "sales_order",
+		"2024 revenue":   "m_2024_revenue",
+		"客户订单":           "model",
 		"  birth_names ": "birth_names",
 	}
 	for in, want := range cases {
@@ -217,4 +217,70 @@ func hasCode(issues []Issue, code string) bool {
 		}
 	}
 	return false
+}
+
+// The API stores default filters as a list (normalizeSpec). Compile used to
+// decode a single object, so every API-created rule failed to parse and turned
+// into a publish-blocking error.
+func TestCompileAcceptsArrayShapedDefaultFilters(t *testing.T) {
+	spec, issues := Compile(CompileInput{
+		Model:  baseModel(),
+		Fields: []models.SemanticField{field("id", models.FieldKindColumn, "")},
+		Rules: []models.SemanticRule{{
+			Category: models.RuleDefaultFilter, Title: "排除软删除", Status: "active",
+			Spec: datatypes.JSON(`[{"field":"deleted_at","op":"is_null"}]`),
+		}},
+	})
+	if HasErrors(issues) {
+		t.Fatalf("unexpected errors: %+v", issues)
+	}
+	if len(spec.Filters) != 1 || spec.Filters[0].Op != "is_null" {
+		t.Fatalf("array-shaped filter not compiled: %+v", spec.Filters)
+	}
+}
+
+// A filter that names a column the dataset does not have would produce SQL that
+// fails at the engine, so it must block publishing — and it must be reported as
+// "unknown column", not as "unparseable spec".
+func TestCompileRejectsFilterOnUnknownColumn(t *testing.T) {
+	_, issues := Compile(CompileInput{
+		Model:           baseModel(),
+		Fields:          []models.SemanticField{field("id", models.FieldKindColumn, "")},
+		PhysicalColumns: map[string]bool{"id": true},
+		Rules: []models.SemanticRule{{
+			Category: models.RuleDefaultFilter, Title: "坏规则", Status: "active",
+			Spec: datatypes.JSON(`[{"field":"ghost","op":"is_null"}]`),
+		}},
+	})
+	if !hasCode(issues, IssueFilterUnknownColumn) {
+		t.Fatalf("expected %s, got %+v", IssueFilterUnknownColumn, issues)
+	}
+	if hasCode(issues, IssueDefaultFilterBroken) {
+		t.Fatalf("a resolvable filter must not be reported as unparseable: %+v", issues)
+	}
+}
+
+// A column field without an explicit expression is a passthrough to the column
+// of the same name; validating only f.Expression skipped that case entirely.
+func TestCompileRejectsPassthroughToMissingColumn(t *testing.T) {
+	_, issues := Compile(CompileInput{
+		Model:           baseModel(),
+		Fields:          []models.SemanticField{field("id", models.FieldKindColumn, ""), field("ghost", models.FieldKindColumn, "")},
+		PhysicalColumns: map[string]bool{"id": true},
+	})
+	if !hasCode(issues, IssueUnknownColumn) {
+		t.Fatalf("expected %s, got %+v", IssueUnknownColumn, issues)
+	}
+}
+
+// Expressions are not column references; they must not be validated by name.
+func TestCompileSkipsExpressionFieldsInColumnCheck(t *testing.T) {
+	_, issues := Compile(CompileInput{
+		Model:           baseModel(),
+		Fields:          []models.SemanticField{field("id", models.FieldKindColumn, ""), field("gmv", models.FieldKindMetric, "SUM(amount)")},
+		PhysicalColumns: map[string]bool{"id": true},
+	})
+	if hasCode(issues, IssueUnknownColumn) {
+		t.Fatalf("an expression must not be checked as a column name: %+v", issues)
+	}
 }

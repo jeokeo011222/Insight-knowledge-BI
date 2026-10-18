@@ -50,7 +50,7 @@ func (s *Service) ListRules(ctx context.Context, datasetID int) ([]models.Semant
 // CreateRule validates the category and stores the rule.
 func (s *Service) CreateRule(ctx context.Context, in RuleInput) (*models.SemanticRule, error) {
 	rule := models.SemanticRule{
-		Scope: firstNonEmpty(in.Scope, models.RuleScopeDataset),
+		Scope:     firstNonEmpty(in.Scope, models.RuleScopeDataset),
 		DatasetID: in.DatasetID, ModelID: in.ModelID,
 		Category: strings.TrimSpace(in.Category),
 		Title:    strings.TrimSpace(in.Title),

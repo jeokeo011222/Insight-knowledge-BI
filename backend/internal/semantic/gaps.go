@@ -171,12 +171,12 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 			described++
 		} else {
 			add(Gap{
-				ID:       GapMissingDescription + ":" + c.ColumnName,
-				Kind:     GapMissingDescription, Severity: "high",
+				ID:   GapMissingDescription + ":" + c.ColumnName,
+				Kind: GapMissingDescription, Severity: "high",
 				Target:   c.ColumnName,
 				Question: fmt.Sprintf("「%s」这一列存的是什么？（%s）", c.ColumnName, strings.TrimSpace(c.Type)),
 				Draft:    draftDescription(c), Confidence: draftConfidence(c),
-				Evidence: "column.description 为空",
+				Evidence:  "column.description 为空",
 				ApplyMode: "column_description",
 			})
 		}
@@ -193,12 +193,12 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 			moneyCols = append(moneyCols, c.ColumnName)
 			if unit == "" && !strings.Contains(desc, "元") && !strings.Contains(desc, "币") {
 				add(Gap{
-					ID:       GapMissingUnit + ":" + c.ColumnName,
-					Kind:     GapMissingUnit, Severity: "medium",
+					ID:   GapMissingUnit + ":" + c.ColumnName,
+					Kind: GapMissingUnit, Severity: "medium",
 					Target:   c.ColumnName,
 					Question: fmt.Sprintf("「%s」的单位是什么？（元/万元/美元…）", c.ColumnName),
 					Draft:    guessUnit(c.ColumnName), Confidence: "low",
-					Evidence: "列名像金额但没有声明单位",
+					Evidence:  "列名像金额但没有声明单位",
 					ApplyMode: "column_description",
 				})
 			}
@@ -215,12 +215,12 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 			}
 			if !hasTimeHint {
 				add(Gap{
-					ID:       GapTimeNoHint + ":" + c.ColumnName,
-					Kind:     GapTimeNoHint, Severity: "low",
+					ID:   GapTimeNoHint + ":" + c.ColumnName,
+					Kind: GapTimeNoHint, Severity: "low",
 					Target:   c.ColumnName,
 					Question: fmt.Sprintf("「%s」是哪个时区的业务时间？（例如 UTC 的事件时间 / 北京时间）", c.ColumnName),
 					Draft:    "UTC 时间（待确认）", Confidence: "low",
-					Evidence: "时间列未说明时区或事件/统计口径",
+					Evidence:  "时间列未说明时区或事件/统计口径",
 					ApplyMode: "column_description",
 				})
 			}
@@ -230,21 +230,24 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 			hasSoftDeleteColumn = c.ColumnName
 		}
 
-		// Enum detection needs values, which needs authorization.
+		// Enum detection needs values, which needs authorization. Personal
+		// columns are never sampled: the draft is stored in the report and shown
+		// in the UI, so enumerating a phone/email column would copy raw PII into
+		// a governance artifact. Those columns get the PII gap instead.
 		enumDeclared := hasField && len(field.Enum) > 0
-		if !enumDeclared && sc.Sample != nil && allowSample && isCategorical(c) {
+		if !enumDeclared && sc.Sample != nil && allowSample && isCategorical(c) && !looksPersonal(c) {
 			lowCardinality++
 			values, err := sc.Sample(ctx, datasetID, c.ColumnName, 30)
 			if err != nil {
 				sc.Log.Debug("gap sampler failed", zap.String("column", c.ColumnName), zap.Error(err))
 			} else if len(values) > 0 && len(values) <= 30 {
 				add(Gap{
-					ID:       GapMissingEnum + ":" + c.ColumnName,
-					Kind:     GapMissingEnum, Severity: "medium",
+					ID:   GapMissingEnum + ":" + c.ColumnName,
+					Kind: GapMissingEnum, Severity: "medium",
 					Target:   c.ColumnName,
 					Question: fmt.Sprintf("「%s」的取值是固定枚举吗？", c.ColumnName),
 					Draft:    strings.Join(values, " / "), Confidence: "high",
-					Evidence: fmt.Sprintf("采样 %d 个不同值，全部落在此集合内", len(values)),
+					Evidence:  fmt.Sprintf("采样 %d 个不同值，全部落在此集合内", len(values)),
 					ApplyMode: "column_description",
 				})
 			}
@@ -255,26 +258,26 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 
 	if hasSoftDeleteColumn != "" && ruleByCategory[models.RuleDefaultFilter] == 0 {
 		add(Gap{
-			ID:       GapSoftDeleteNoRule + ":" + hasSoftDeleteColumn,
-			Kind:     GapSoftDeleteNoRule, Severity: "high",
-			Target:   hasSoftDeleteColumn,
-			Question: fmt.Sprintf("是否默认排除软删除记录（%s）？", hasSoftDeleteColumn),
-			Draft:    fmt.Sprintf("默认过滤 %s IS NULL", hasSoftDeleteColumn),
+			ID:   GapSoftDeleteNoRule + ":" + hasSoftDeleteColumn,
+			Kind: GapSoftDeleteNoRule, Severity: "high",
+			Target:     hasSoftDeleteColumn,
+			Question:   fmt.Sprintf("是否默认排除软删除记录（%s）？", hasSoftDeleteColumn),
+			Draft:      fmt.Sprintf("默认过滤 %s IS NULL", hasSoftDeleteColumn),
 			Confidence: "high",
-			Evidence: "存在软删除列，但没有任何 default_filter 规则",
-			ApplyMode: "semantic_rule",
+			Evidence:   "存在软删除列，但没有任何 default_filter 规则",
+			ApplyMode:  "semantic_rule",
 		})
 	}
 	if len(moneyCols) > 0 && ruleByCategory[models.RuleCurrency] == 0 {
 		add(Gap{
-			ID:       GapCurrencyNoRule + ":" + strings.Join(moneyCols, ","),
-			Kind:     GapCurrencyNoRule, Severity: "medium",
-			Target:   moneyCols[0],
-			Question: "这些金额列都是同一种币种吗？",
-			Draft:    "金额字段统一为人民币（元），不做汇率换算",
+			ID:   GapCurrencyNoRule + ":" + strings.Join(moneyCols, ","),
+			Kind: GapCurrencyNoRule, Severity: "medium",
+			Target:     moneyCols[0],
+			Question:   "这些金额列都是同一种币种吗？",
+			Draft:      "金额字段统一为人民币（元），不做汇率换算",
 			Confidence: "low",
-			Evidence: fmt.Sprintf("检测到金额列 %s，但没有 currency 规则", strings.Join(moneyCols, ", ")),
-			ApplyMode: "semantic_rule",
+			Evidence:   fmt.Sprintf("检测到金额列 %s，但没有 currency 规则", strings.Join(moneyCols, ", ")),
+			ApplyMode:  "semantic_rule",
 		})
 	}
 
@@ -282,14 +285,14 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 	// cannot know whether orders or orders_v2 is "the" orders.
 	if siblings := sc.siblingTables(ctx, ds); len(siblings) > 0 && ruleByCategory[models.RuleCanonicalTable] == 0 {
 		add(Gap{
-			ID:       GapSimilarTables + ":" + ds.TableNameStr,
-			Kind:     GapSimilarTables, Severity: "high",
-			Target:   ds.TableNameStr,
-			Question: fmt.Sprintf("%s 与 %s 哪张是权威表？", ds.TableNameStr, strings.Join(siblings, "、")),
-			Draft:    fmt.Sprintf("以 %s 为准，%s 仅历史归档", ds.TableNameStr, strings.Join(siblings, "、")),
+			ID:   GapSimilarTables + ":" + ds.TableNameStr,
+			Kind: GapSimilarTables, Severity: "high",
+			Target:     ds.TableNameStr,
+			Question:   fmt.Sprintf("%s 与 %s 哪张是权威表？", ds.TableNameStr, strings.Join(siblings, "、")),
+			Draft:      fmt.Sprintf("以 %s 为准，%s 仅历史归档", ds.TableNameStr, strings.Join(siblings, "、")),
 			Confidence: "low",
-			Evidence: "存在名称相近的表且没有 canonical_table 规则",
-			ApplyMode: "semantic_rule",
+			Evidence:   "存在名称相近的表且没有 canonical_table 规则",
+			ApplyMode:  "semantic_rule",
 		})
 	}
 
@@ -300,12 +303,12 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 		for _, m := range metrics {
 			if m.Status != "approved" {
 				add(Gap{
-					ID:       GapMetricUnapproved + ":" + m.Name,
-					Kind:     GapMetricUnapproved, Severity: "medium",
+					ID:   GapMetricUnapproved + ":" + m.Name,
+					Kind: GapMetricUnapproved, Severity: "medium",
 					Target:   m.Name,
 					Question: fmt.Sprintf("指标「%s」的口径可以定稿吗？", m.Name),
 					Draft:    m.Expression, Confidence: "high",
-					Evidence: "状态为 " + firstNonEmpty(m.Status, "draft"),
+					Evidence:  "状态为 " + firstNonEmpty(m.Status, "draft"),
 					ApplyMode: "",
 				})
 			}
@@ -332,38 +335,38 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 	}
 	if !published {
 		add(Gap{
-			ID:       GapNoPublishedModel + ":dataset",
-			Kind:     GapNoPublishedModel, Severity: "high",
-			Target:   ds.TableNameStr,
-			Question: "语义模型还没有发布，Agent 现在无法使用结构化查询。",
-			Draft:    "补完描述后发布",
+			ID:   GapNoPublishedModel + ":dataset",
+			Kind: GapNoPublishedModel, Severity: "high",
+			Target:     ds.TableNameStr,
+			Question:   "语义模型还没有发布，Agent 现在无法使用结构化查询。",
+			Draft:      "补完描述后发布",
 			Confidence: "high",
-			Evidence: "没有 status=published 的语义模型",
-			ApplyMode: "",
+			Evidence:   "没有 status=published 的语义模型",
+			ApplyMode:  "",
 		})
 	}
 	if published && !hasRelationship {
 		add(Gap{
-			ID:       GapNoRelationship + ":dataset",
-			Kind:     GapNoRelationship, Severity: "low",
-			Target:   ds.TableNameStr,
-			Question: "这个数据集需要与其它表关联吗？",
-			Draft:    "单表分析为主，暂不建立关系",
+			ID:   GapNoRelationship + ":dataset",
+			Kind: GapNoRelationship, Severity: "low",
+			Target:     ds.TableNameStr,
+			Question:   "这个数据集需要与其它表关联吗？",
+			Draft:      "单表分析为主，暂不建立关系",
 			Confidence: "low",
-			Evidence: "已发布模型但没有任何关系",
-			ApplyMode: "",
+			Evidence:   "已发布模型但没有任何关系",
+			ApplyMode:  "",
 		})
 	}
 	for _, c := range cols {
 		if c.PIILevel == "" || c.PIILevel == "none" {
 			if looksPersonal(c) {
 				add(Gap{
-					ID:       GapPIILevelMissing + ":" + c.ColumnName,
-					Kind:     GapPIILevelMissing, Severity: "high",
+					ID:   GapPIILevelMissing + ":" + c.ColumnName,
+					Kind: GapPIILevelMissing, Severity: "high",
 					Target:   c.ColumnName,
 					Question: fmt.Sprintf("「%s」是否包含个人信息？", c.ColumnName),
 					Draft:    "high（应默认脱敏）", Confidence: "medium",
-					Evidence: "列名/类型像个人信息但 pii_level=none",
+					Evidence:  "列名/类型像个人信息但 pii_level=none",
 					ApplyMode: "",
 				})
 			}
@@ -395,13 +398,13 @@ func (sc *Scanner) Scan(ctx context.Context, datasetID int, allowSample bool) (*
 	}
 	report.Score = (descPct*40 + enumPct*20 + rulePct*20 + modelPct*20) / 100
 	report.Coverage = map[string]any{
-		"columns":              len(cols),
-		"described_columns":    described,
-		"described_pct":        descPct,
-		"enum_ready_pct":       enumPct,
-		"rules_present":        ruleByCategory,
-		"published_model":      published,
-		"semantic_fields":      totalFields,
+		"columns":           len(cols),
+		"described_columns": described,
+		"described_pct":     descPct,
+		"enum_ready_pct":    enumPct,
+		"rules_present":     ruleByCategory,
+		"published_model":   published,
+		"semantic_fields":   totalFields,
 	}
 	if !allowSample {
 		report.Note = "未采样：枚举检查需要读取真实数据，勾选「允许采样」后重新扫描"
@@ -456,9 +459,9 @@ func (sc *Scanner) ApplyGap(ctx context.Context, datasetID int, gapID, value str
 		rule := models.SemanticRule{
 			Scope: models.RuleScopeDataset, DatasetID: datasetID,
 			Category: models.RuleDefaultFilter, Title: "默认排除软删除记录",
-			Body:     value,
-			Spec:     mustJSON(FilterSpec{Field: target, Op: "is_null", Reason: "默认排除软删除记录"}),
-			Status:   "active", Evidence: "gap_scanner: " + gapID,
+			Body:   value,
+			Spec:   mustJSON(FilterSpec{Field: target, Op: "is_null", Reason: "默认排除软删除记录"}),
+			Status: "active", Evidence: "gap_scanner: " + gapID,
 		}
 		if err := sc.DB.WithContext(ctx).Create(&rule).Error; err != nil {
 			return nil, err

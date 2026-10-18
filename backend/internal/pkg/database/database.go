@@ -58,12 +58,41 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(models.AIModels()...); err != nil {
 		db.Logger.Warn(context.Background(), "ai tables migration skipped: %v", err)
 	}
+	migrateSemanticIndexes(db)
 	seedDefaultThemes(db)
 	seedDefaultGovernance(db)
 	// Seeds and DDL above leave every pooled session holding PostgreSQL
 	// prepared statements described against the *old* column set.
 	recyclePool(db)
 	return nil
+}
+
+// migrateSemanticIndexes converts the MDL-lite unique keys to partial indexes.
+//
+// Both keys must ignore soft-deleted rows, because deletion in this schema is a
+// flag rather than a DELETE:
+//   - semantic_models: "delete the model, then regenerate it from the dataset"
+//     used to fail with a duplicate key naming a row the user could no longer
+//     see (409 forever).
+//   - semantic_fields: saving a model replaces its whole field list (soft-delete
+//   - re-insert the same names), so every save returned 500.
+//
+// AutoMigrate cannot express partial indexes, hence the explicit DDL. It runs on
+// every boot and is idempotent: DROP IF EXISTS + CREATE IF NOT EXISTS.
+func migrateSemanticIndexes(db *gorm.DB) {
+	stmts := []string{
+		`DROP INDEX IF EXISTS uq_semantic_models_dataset_name`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_semantic_models_dataset_name
+			ON semantic_models (dataset_id, name) WHERE deleted = false`,
+		`DROP INDEX IF EXISTS uq_semantic_fields_model_name`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_semantic_fields_model_name
+			ON semantic_fields (model_id, name) WHERE deleted = false`,
+	}
+	for _, stmt := range stmts {
+		if err := db.Exec(stmt).Error; err != nil {
+			db.Logger.Warn(context.Background(), "semantic index migration failed: %v", err)
+		}
+	}
 }
 
 // recyclePool closes the idle sessions of the metadata pool.

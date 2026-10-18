@@ -44,7 +44,7 @@ type semanticQueryInput struct {
 		Op    string `json:"op"`
 		Value any    `json:"value"`
 	} `json:"filters"`
-	Limit int  `json:"limit"`
+	Limit int `json:"limit"`
 	Order []struct {
 		Field string `json:"field"`
 		Desc  bool   `json:"desc"`
@@ -103,12 +103,12 @@ func semanticQuery(s *Service) registry.ToolExecutor {
 				}
 			}
 			payload := map[string]any{
-				"status":             "rejected_by_semantic_layer",
-				"code":               "MODEL_NOT_FOUND",
-				"message":            err.Error(),
-				"available_models":   names,
-				"fallback":           "若该数据集尚未配置语义模型，请改用 schema_reader + query_executor",
-				"dataset_id":         in.DatasetID,
+				"status":           "rejected_by_semantic_layer",
+				"code":             "MODEL_NOT_FOUND",
+				"message":          err.Error(),
+				"available_models": names,
+				"fallback":         "若该数据集尚未配置语义模型，请改用 schema_reader + query_executor",
+				"dataset_id":       in.DatasetID,
 			}
 			blob, _ := json.Marshal(payload)
 			return nil, fmt.Errorf("%s", blob)
@@ -197,8 +197,8 @@ func semanticQueryObject(view *semantic.ModelView, in *semanticQueryInput) (*que
 				agg = "COUNT"
 			}
 			qo.Metrics = append(qo.Metrics, queries.AdhocMetric{
-				SQLExpression:  fmt.Sprintf("%s(%s)", agg, f.Expression),
-				Label:          name, HasCustomLabel: true,
+				SQLExpression: fmt.Sprintf("%s(%s)", agg, f.Expression),
+				Label:         name, HasCustomLabel: true,
 			})
 			applied = append(applied, map[string]any{
 				"field": name, "note": fmt.Sprintf("%s 不是 metric 字段，按 %s(%s) 聚合", name, agg, f.Expression),

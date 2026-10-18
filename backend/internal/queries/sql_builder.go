@@ -336,7 +336,8 @@ func (b *sqlBuilder) columnType(name string) string {
 	return "STRING"
 }
 
-// columnItem resolves a groupby/columns entry (string or AdhocColumn object).
+// columnItem resolves a groupby/columns entry (string, AdhocColumn or the JSON
+// map form of one).
 func (b *sqlBuilder) columnItem(item any) (expr, label, typ string, err error) {
 	switch v := item.(type) {
 	case string:
@@ -347,6 +348,27 @@ func (b *sqlBuilder) columnItem(item any) (expr, label, typ string, err error) {
 			typ = "STRING"
 		}
 		return expr, label, typ, nil
+	case AdhocColumn:
+		// Go callers (the semantic_query tool) build typed AdhocColumn values
+		// while the HTTP API hands the builder JSON maps. Supporting only the map
+		// shape made every semantic query fail with "Unsupported column
+		// definition" — the two paths must behave identically.
+		label = v.Label
+		if label == "" || !v.HasCustomLabel {
+			if v.ColumnName != "" {
+				label = v.ColumnName
+			} else if label == "" {
+				label = v.SQLExpression
+			}
+		}
+		switch {
+		case v.SQLExpression != "":
+			return v.SQLExpression, label, "STRING", nil
+		case v.ColumnName != "":
+			return b.columnExpr(v.ColumnName), label, b.columnType(v.ColumnName), nil
+		default:
+			return "", "", "", apperrors.BadRequest("Unsupported column definition: %v", item)
+		}
 	case map[string]any:
 		sqlExpr := firstString(v["sqlExpression"], v["sql_expression"])
 		colName := firstString(v["column_name"], v["columnName"], v["column"])
