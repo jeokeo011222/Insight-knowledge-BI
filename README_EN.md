@@ -56,7 +56,7 @@ You ask good questions. It makes them trustworthy answers.
 | 🧩 | **Three ways in, one way out** | direct DB (60+ engines), Excel/CSV import (incl. legacy `.xls`, multi-sheet), HTTP/API — all land as the same kind of *dataset* |
 | 🖥️ | **Screens & dashboards** | dashboards with rows/tabs, native filters, template import/export; every screen widget can bind a saved chart **or** a dataset |
 | 🧭 | **One metric definition, everywhere** | semantic-layer metric dictionary is injected into the prompt; attribution maths (`share` / `cum_share`) is computed in code, never by the model |
-| 🔁 | **Same question, same answer** | low temperature + a fixed SQL template + statement canonicalization + answer memory: the same question asked twice yields the same SQL 91.5% of the time (95.6% across the runs that both queried), up from 6.4% |
+| 🔁 | **Same question, same answer** | low temperature + a fixed SQL template + statement canonicalization + answer memory: the same question asked twice yields the same SQL 91.5% of the time, up from 6.4% (almost all of it from the answer memory; prompt-only control: 8.7%) |
 
 ## Feature tour
 
@@ -74,7 +74,10 @@ qualification); every statement is canonicalized before execution (quoting, case
 `COUNT(1)→COUNT(*)`, projection aliases rewritten from their expression); and repeated questions hit the answer
 memory — the recorded **SQL is re-executed**, and the answer is reused only if the result fingerprint (row count
 plus the sorted set of rows) still matches. Data moved, so the run is regenerated. Across 50 questions × 2 runs,
-"two runs, same SQL" went from 6.4% to 91.5% (95.6% when both runs actually queried), and repeated questions cost 0 tokens.
+"two runs, same SQL" went from 6.4% to 91.5%, and repeated questions cost 0 tokens.
+To be honest about where it comes from: almost all of that is the answer memory. With replay switched off, temperature 0 + the SQL
+template + canonicalization alone measure 8.7% — so the claim is "repeat questions are reproducible", not "the model always writes
+the same SQL". The latter needs a deterministic compiler (question → spec → SQL), which is not built yet.
 
 <div align="center">
 <img src="docs/images/agent-runtime.svg" alt="Agent runtime" width="100%" />
