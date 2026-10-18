@@ -763,9 +763,14 @@ func (s *Service) prepareAgentSQL(ctx context.Context, datasetID int, statement 
 	if err != nil {
 		return "", err
 	}
-	canonical := canonicalizeSQL(statement, CanonicalOptions{
-		Schema: info.Schema, Table: info.Table, Columns: info.Columns,
-	})
+	opts := CanonicalOptions{Columns: info.Columns}
+	if info.Physical {
+		// Only a dataset backed by a real table has a table name worth
+		// canonicalising; a virtual dataset's statements refer to whatever its
+		// own SQL selects, so rewriting would be guesswork.
+		opts.Schema, opts.Table = info.Schema, info.Table
+	}
+	canonical := canonicalizeSQL(statement, opts)
 	if err := ValidateReadOnlySQL(canonical); err != nil {
 		return "", err
 	}

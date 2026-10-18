@@ -2,6 +2,8 @@
 backend/superset-dev
 backend/superset-dev.exe
 backend/*.exe
+# Windows 下覆盖正在运行的二进制会留下 foo.exe~ 形式的旧产物
+backend/*.exe~
 frontend/dist/
 # 重新构建时留下的旧产物备份目录（如 dist_prev_1737），同样不入库
 frontend/dist_prev_*/

@@ -140,3 +140,24 @@ func TestCanonicalEmptyAndBroken(t *testing.T) {
 		t.Fatalf("unparsable input must be returned unchanged, got %q", got)
 	}
 }
+
+func TestResultFingerprintIgnoresRowOrder(t *testing.T) {
+	a := []map[string]any{{"state": "CA", "count": 10}, {"state": "TX", "count": 20}}
+	b := []map[string]any{{"state": "TX", "count": 20}, {"state": "CA", "count": 10}}
+	if resultFingerprint(a) != resultFingerprint(b) {
+		t.Fatal("row order must not change the fingerprint")
+	}
+	// A changed number is a different result: a replay must not reuse it.
+	c := []map[string]any{{"state": "CA", "count": 11}, {"state": "TX", "count": 20}}
+	if resultFingerprint(a) == resultFingerprint(c) {
+		t.Fatal("a changed value must change the fingerprint")
+	}
+	// So is an extra row.
+	d := append(append([]map[string]any{}, a...), map[string]any{"state": "NY", "count": 5})
+	if resultFingerprint(a) == resultFingerprint(d) {
+		t.Fatal("an extra row must change the fingerprint")
+	}
+	if resultFingerprint(nil) != "" {
+		t.Fatal("nil rows have no fingerprint")
+	}
+}

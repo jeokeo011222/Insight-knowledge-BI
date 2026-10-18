@@ -56,6 +56,7 @@ You ask good questions. It makes them trustworthy answers.
 | 🧩 | **Three ways in, one way out** | direct DB (60+ engines), Excel/CSV import (incl. legacy `.xls`, multi-sheet), HTTP/API — all land as the same kind of *dataset* |
 | 🖥️ | **Screens & dashboards** | dashboards with rows/tabs, native filters, template import/export; every screen widget can bind a saved chart **or** a dataset |
 | 🧭 | **One metric definition, everywhere** | semantic-layer metric dictionary is injected into the prompt; attribution maths (`share` / `cum_share`) is computed in code, never by the model |
+| 🔁 | **Same question, same answer** | low temperature + a fixed SQL template + statement canonicalization + answer memory: the same question asked twice yields the same SQL 91.5% of the time (95.6% across the runs that both queried), up from 6.4% |
 
 ## Feature tour
 
@@ -66,6 +67,14 @@ You ask good questions. It makes them trustworthy answers.
 Ask in plain language. The agent first surveys available tables, columns and metric definitions, then decides
 which query to run. Results are truncated against the remaining token budget (keeping head and tail), so large
 tables still fit safely. If it cannot answer yet, it returns to planning instead of guessing.
+
+**The same question asked twice should give the same answer.** That takes four layers, not luck: planning runs at
+temperature 0; the system prompt carries a fixed SQL template (skeleton, aggregate allowlist, alias rules, schema
+qualification); every statement is canonicalized before execution (quoting, case, schema prefix,
+`COUNT(1)→COUNT(*)`, projection aliases rewritten from their expression); and repeated questions hit the answer
+memory — the recorded **SQL is re-executed**, and the answer is reused only if the result fingerprint (row count
+plus the sorted set of rows) still matches. Data moved, so the run is regenerated. Across 50 questions × 2 runs,
+"two runs, same SQL" went from 6.4% to 91.5% (95.6% when both runs actually queried), and repeated questions cost 0 tokens.
 
 <div align="center">
 <img src="docs/images/agent-runtime.svg" alt="Agent runtime" width="100%" />

@@ -3,6 +3,8 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -66,7 +68,15 @@ func (s *Service) lookupReplay(ctx context.Context, userID, agentID, datasetID i
 }
 
 // resultFingerprint hashes a result set so a replay can tell "same numbers" from
-// "numbers moved". encoding/json sorts map keys, so the hash is stable.
+// "numbers moved".
+//
+// Row *order* is deliberately normalised away: PostgreSQL does not promise an
+// order without ORDER BY, and even with one, ties can come back in either
+// order. Hashing the raw array made the replay miss on queries whose data had
+// not changed at all — a false negative that quietly turned a deterministic
+// answer back into a model call. The hash therefore covers the row count plus
+// the sorted multiset of the first rows, which is what "the numbers are the
+// same" actually means.
 func resultFingerprint(rows any) string {
 	if rows == nil {
 		return ""
@@ -75,7 +85,26 @@ func resultFingerprint(rows any) string {
 	if err != nil {
 		return ""
 	}
-	return hashText(string(b))
+	var decoded []any
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		// Not a row array (a caller handed us something else): hash as-is.
+		return hashText(string(b))
+	}
+	const maxRows = 500
+	head := decoded
+	if len(head) > maxRows {
+		head = head[:maxRows]
+	}
+	lines := make([]string, 0, len(head))
+	for _, row := range head {
+		encoded, mErr := json.Marshal(row) // map keys are sorted by encoding/json
+		if mErr != nil {
+			continue
+		}
+		lines = append(lines, string(encoded))
+	}
+	sort.Strings(lines)
+	return hashText(fmt.Sprintf("%d|%s", len(decoded), strings.Join(lines, "\n")))
 }
 
 // storeReplay records a finished run for later replay. It deliberately refuses
