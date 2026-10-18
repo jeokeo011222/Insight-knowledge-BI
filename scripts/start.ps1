@@ -4,12 +4,13 @@
 
 .DESCRIPTION
     幂等脚本：已经在跑的组件会自动跳过，重复执行不会报"端口被占用"。
-    依次完成 5 步：
+    依次完成 6 步：
       1. 拉起 PostgreSQL / Redis 容器          （-SkipInfra 可跳过）
       2. 编译后端二进制 superset-dev.exe        （-SkipBuild 可跳过）
       3. 迁移元数据库 superset db upgrade       （幂等）
-      4. 启动后端三门进程 run / worker / beat
-      5. 启动前端 Vite dev server               （-SkipFrontend 可跳过）
+      4. 载入示例数据 superset-dev load-examples（幂等，已载入则空跑）
+      5. 启动后端三门进程 run / worker / beat
+      6. 启动前端 Vite dev server               （-SkipFrontend 可跳过）
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\start.ps1
@@ -170,7 +171,21 @@ try {
 }
 Write-Ok '元数据库已就绪'
 
-# ------------------------------------------------------------------ 4. 后端三门进程
+# ------------------------------------------------------------------ 4. 示例数据
+Write-Step '载入示例数据（birth_names 数据集 / 6 张图表 / Birth Names Overview 看板，幂等）'
+Push-Location $BackendDir
+try {
+    & $Exe load-examples
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn '示例数据载入失败，应用仍可正常启动；可稍后手动执行 backend\superset-dev.exe load-examples'
+    } else {
+        Write-Ok '示例数据已就绪'
+    }
+} finally {
+    Pop-Location
+}
+
+# ------------------------------------------------------------------ 5. 后端三门进程
 Write-Step '启动后端进程（run / worker / beat）'
 $runningRoles = Get-RunningRoles
 foreach ($role in @('run', 'worker', 'beat')) {
@@ -187,7 +202,7 @@ if (Wait-Backend -Port $ApiPort) {
     Write-Warn "后端 40 秒内未就绪，请查看 logs\run.log 中的报错"
 }
 
-# ------------------------------------------------------------------ 5. 前端
+# ------------------------------------------------------------------ 6. 前端
 if (-not $SkipFrontend) {
     Write-Step '启动前端 dev server'
     if (Get-ListeningPid -Port $WebPort) {

@@ -12,10 +12,10 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
-	"gorm.io/gorm"
 	"superset/internal/api"
 	"superset/internal/config"
 	"superset/internal/datasets"
+	"superset/internal/examples"
 	"superset/internal/models"
 	"superset/internal/pkg/cache"
 	"superset/internal/pkg/database"
@@ -25,6 +25,8 @@ import (
 	"superset/internal/security"
 	"superset/internal/server"
 	"superset/internal/workers"
+
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -91,10 +93,12 @@ func initCmd() *cobra.Command {
 			if err := seedSecurity(cmd.Context(), cfg, log, db); err != nil {
 				return err
 			}
-			log.Info("database initialized")
 			if withExamples {
-				log.Info("examples loading requested (see load-examples)")
+				if err := examples.Load(cmd.Context(), db, cfg, log); err != nil {
+					return fmt.Errorf("load examples: %w", err)
+				}
 			}
+			log.Info("database initialized")
 			return nil
 		},
 	}
@@ -243,7 +247,7 @@ func beatCmd() *cobra.Command {
 func loadExamplesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "load-examples",
-		Short: "Load example datasets (birth_names, wb_health_population, ...)",
+		Short: "Load the example dataset, charts and dashboard (birth_names)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, log, _, err := bootstrap()
 			if err != nil {
@@ -256,6 +260,9 @@ func loadExamplesCmd() *cobra.Command {
 			}
 			if err := database.Migrate(db); err != nil {
 				return err
+			}
+			if err := examples.Load(cmd.Context(), db, cfg, log); err != nil {
+				return fmt.Errorf("load examples: %w", err)
 			}
 			log.Info("examples loaded")
 			return nil

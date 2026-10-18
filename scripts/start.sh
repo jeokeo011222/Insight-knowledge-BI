@@ -6,8 +6,9 @@
 #   1. 拉起 PostgreSQL / Redis 容器   （--skip-infra 跳过）
 #   2. 编译后端二进制                  （--skip-build 跳过）
 #   3. 迁移元数据库（幂等）
-#   4. 启动后端 run / worker / beat
-#   5. 启动前端 Vite dev server        （--skip-frontend 跳过）
+#   4. 载入示例数据（幂等，已载入则空跑）
+#   5. 启动后端 run / worker / beat
+#   6. 启动前端 Vite dev server        （--skip-frontend 跳过）
 #
 # 用法：
 #   ./scripts/start.sh
@@ -87,7 +88,15 @@ step '迁移元数据库（幂等）'
 ( cd "$BACKEND" && "$BIN" db upgrade ) || die 'db upgrade 失败：请确认数据库已启动、连接串正确'
 ok '元数据库已就绪'
 
-# ---------------------------------------------------------------- 4. 后端三门进程
+# ---------------------------------------------------------------- 4. 示例数据
+step '载入示例数据（birth_names 数据集 / 6 张图表 / 看板，幂等）'
+if ( cd "$BACKEND" && "$BIN" load-examples ); then
+  ok '示例数据已就绪'
+else
+  warn '示例数据载入失败，应用仍可正常启动；可稍后手动执行 backend/superset-dev load-examples'
+fi
+
+# ---------------------------------------------------------------- 5. 后端三门进程
 step '启动后端进程（run / worker / beat）'
 start_role() {
   local role="$1" pid
@@ -114,7 +123,7 @@ for _ in $(seq 1 40); do
 done
 [ "$backend_ready" = "1" ] && ok '后端已就绪' || warn '后端 40 秒内未就绪，请查看 logs/run.log'
 
-# ---------------------------------------------------------------- 5. 前端
+# ---------------------------------------------------------------- 6. 前端
 if [ "$SKIP_FRONTEND" = "1" ]; then
   skip '按参数要求跳过前端'
 elif port_busy "$WEB_PORT"; then

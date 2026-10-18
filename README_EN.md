@@ -204,10 +204,33 @@ The script is **idempotent** — anything already running is skipped. It will:
 1. start the PostgreSQL (5533) and Redis (6379) containers
 2. build the backend binary
 3. migrate the metadata database (tables + role/permission seeds)
-4. launch `run` / `worker` / `beat`
-5. start the frontend dev server
+4. load the example data (sample database + dataset + charts + dashboard)
+5. launch `run` / `worker` / `beat`
+6. start the frontend dev server
 
 Then open **http://localhost:3000** and log in with **`admin` / `admin`**.
+
+### Example content
+
+A fresh clone is not an empty shell:
+
+| Content | Where it comes from | Notes |
+|---|---|---|
+| Roles and permissions (Administrator / Data Analyst / Data Viewer / SQL User / Public) | seeded on migrate | five built-in roles with their permission sets |
+| Themes (ZG Light / ZG Dark) | seeded on migrate | editable under Settings → System → Themes |
+| Sample RLS filter and annotation layer | seeded on migrate | unassociated, so they never change existing queries |
+| Data screen templates (Government Service, Business Environment, City Vital Signs, Livelihood Projects) | shipped in code | Data Screens → New → pick a template |
+| Sample dataset `birth_names`, six charts, `Birth Names Overview` dashboard | `load-examples` | the start script already runs it |
+
+To run it on its own (idempotent — it no-ops once loaded):
+
+```bash
+./superset-dev.exe load-examples          # or: init --with-examples
+```
+
+The sample tables are created in whatever `SQLALCHEMY_EXAMPLES_URI` points at (by default the same
+PostgreSQL instance as the metadata database) — change that setting to host them elsewhere. Skip the
+step entirely by starting the services by hand without running `load-examples`.
 
 ### Lifecycle scripts
 

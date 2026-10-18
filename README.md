@@ -198,15 +198,37 @@ cd Insight-knowledge-BI/scripts
 ./start.sh              # Windows 用 start.bat 或 powershell -File start.ps1
 ```
 
-脚本做五件事，而且**是幂等的** —— 已经在跑的部分会自动跳过：
+脚本做六件事，而且**是幂等的** —— 已经在跑的部分会自动跳过：
 
 1. 拉起 PostgreSQL（5533）与 Redis（6379）容器
 2. 编译后端二进制
 3. 迁移元数据库（建表 + 播种角色权限）
-4. 启动 `run` / `worker` / `beat`
-5. 启动前端 Vite dev server
+4. 载入示例数据（示例库 + 数据集 + 图表 + 看板）
+5. 启动 `run` / `worker` / `beat`
+6. 启动前端 Vite dev server
 
 打开 **http://localhost:3000**，用 **`admin` / `admin`** 登录即可。
+
+### 示例数据
+
+克隆下来就能看到内容，不用手工造数据：
+
+| 内容 | 来源 | 说明 |
+|---|---|---|
+| 角色与权限（管理员 / 数据分析师 / 数据查看者 / SQL 用户 / 公开用户） | 建表时自动播种 | 5 个内置角色及权限集 |
+| 主题（智观默认 / 智观暗色） | 建表时自动播种 | 可在「系统管理 → 主题管理」里改 |
+| RLS 示例、标注图层示例 | 建表时自动播种 | 未关联角色 / 数据集，不会影响既有查询 |
+| 数据大屏模板（政务服务效能监测、营商环境监测、城市运行体征、民生实事进度） | 代码内置 | 「数据大屏 → 新建 → 选模板」一键生成 |
+| 示例数据集 `birth_names`、6 张图表、`Birth Names Overview` 看板 | `load-examples` | 启动脚本已自动执行 |
+
+想单独重跑（幂等，已载入则空跑）：
+
+```bash
+./superset-dev.exe load-examples          # 也可用 init --with-examples
+```
+
+示例数据写入 `SQLALCHEMY_EXAMPLES_URI` 指向的库（默认与元数据库同一个 PostgreSQL 实例），
+想换个地方放示例表，改这个配置项即可。想跳过这一步就手工启动、不要执行 `load-examples`。
 
 ### 生命周期脚本
 
@@ -232,12 +254,13 @@ docker compose -f docker/docker-compose.yml up -d     # 1. 基础设施
 
 cd backend && go build -o superset-dev.exe ./cmd/superset
 ./superset-dev.exe db upgrade                          # 2. 建表 / 升级
+./superset-dev.exe load-examples                       # 3. 示例数据集 / 图表 / 看板（可选，幂等）
 
-./superset-dev.exe run &                               # 3. 三个角色分别起
+./superset-dev.exe run &                               # 4. 三个角色分别起
 ./superset-dev.exe worker &
 ./superset-dev.exe beat &
 
-cd frontend && pnpm install && pnpm run dev            # 4. 前端
+cd frontend && pnpm install && pnpm run dev            # 5. 前端
 ```
 
 ## 技术栈
