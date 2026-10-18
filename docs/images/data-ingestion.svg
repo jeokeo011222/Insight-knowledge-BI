@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="智观 BI 三种取数方式">
+  <rect width="1200" height="600" fill="#ffffff"/>
+  <defs>
+    <marker id="arw3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#20a7c9"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;}
+    .h1{font-size:28px;font-weight:700;fill:#0f172a;}
+    .sub{font-size:15px;fill:#64748b;}
+    .t{font-size:17px;font-weight:600;fill:#0f172a;}
+    .d{font-size:13px;fill:#64748b;}
+    .f{font-size:13px;fill:#94a3b8;}
+    .flow{font-size:12px;fill:#0e7490;}
+  </style>
+
+  <text class="h1" x="60" y="52">智观 BI · 三种取数方式</text>
+  <text class="sub" x="60" y="80">无论数据在哪里 —— 直连数据库、导入文件、或调用远程 API，最终都沉淀成同一个「数据集」</text>
+
+  <!-- source row -->
+  <rect x="60" y="116" width="340" height="88" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="t" x="84" y="152">① 数据库直连</text>
+  <text class="d" x="84" y="177">67 个引擎，26 个随包自带真实驱动</text>
+  <text class="d" x="84" y="197">方言引号 / 时间粒度 / LIMIT 语法自动适配</text>
+
+  <rect x="430" y="116" width="340" height="88" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="t" x="454" y="152">② Excel / CSV 导入</text>
+  <text class="d" x="454" y="177">.xlsx 与旧版 .xls（OLE2 魔数识别）</text>
+  <text class="d" x="454" y="197">多 sheet 可选，每个 sheet 单独成数据集</text>
+
+  <rect x="800" y="116" width="340" height="88" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text class="t" x="824" y="152">③ HTTP / API 接口</text>
+  <text class="d" x="824" y="177">仅允许 http / https，凭据加密且不回显</text>
+  <text class="d" x="824" y="197">超时、响应体大小、行数三重上限</text>
+
+  <line x1="230" y1="204" x2="230" y2="258" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw3)"/>
+  <line x1="600" y1="204" x2="600" y2="258" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw3)"/>
+  <line x1="970" y1="204" x2="970" y2="258" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw3)"/>
+
+  <!-- middle row -->
+  <rect x="60" y="262" width="340" height="96" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text class="t" x="84" y="300">查询时下推</text>
+  <text class="d" x="84" y="326">不落库，按引擎方言生成 SQL 直连源库执行</text>
+  <text class="d" x="84" y="346">结果进入统一缓存与后处理算子管线</text>
+
+  <rect x="430" y="262" width="710" height="96" rx="12" fill="#f0fdfa" stroke="#5eead4"/>
+  <text class="t" x="454" y="300">物化为托管 SQLite 表（external.db）</text>
+  <text class="d" x="454" y="326">解析表头与列类型 → 清洗标识符（保留任意语言字母数字，中文不被截断）→ 建表写入</text>
+  <text class="d" x="454" y="346">刷新时按数据源记录重新解析，多 sheet 分别对应独立工作表</text>
+
+  <line x1="230" y1="358" x2="230" y2="418" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw3)"/>
+  <line x1="785" y1="358" x2="785" y2="418" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw3)"/>
+
+  <!-- bottom -->
+  <rect x="60" y="422" width="1080" height="100" rx="12" fill="#ffffff" stroke="#20a7c9" stroke-width="2"/>
+  <text class="t" x="84" y="462">统一生成「数据集」</text>
+  <text class="d" x="84" y="488">列与指标定义 · 行级安全（RLS）· 列级 Agent 可见性 · 数据源来源标识</text>
+  <text class="d" x="84" y="510">下游零改动复用同一套链路：查询引擎 → 80+ 种图表 → 探索分析 → 仪表盘与数据大屏</text>
+
+  <text class="f" x="60" y="566">三种方式共用同一个入口与来源标识，因此权限、缓存、审计与图表渲染逻辑只有一份实现</text>
+</svg>

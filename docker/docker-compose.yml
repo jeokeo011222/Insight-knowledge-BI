@@ -1,0 +1,37 @@
+# Infrastructure for the Go + React replica: metadata database and cache.
+#   docker compose -f docker/docker-compose.yml up -d
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: superset-go-pg
+    environment:
+      POSTGRES_USER: superset
+      POSTGRES_PASSWORD: superset
+      POSTGRES_DB: superset
+    ports:
+      - "5533:5432"
+    volumes:
+      - superset-go-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superset -d superset"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: superset-go-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - superset-go-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  superset-go-pgdata:
+  superset-go-redisdata:

@@ -1,0 +1,59 @@
+# ---------------- 构建产物 ----------------
+backend/superset-dev
+backend/superset-dev.exe
+backend/*.exe
+frontend/dist/
+frontend/.vite/
+frontend/node_modules/
+
+# ---------------- 运行时数据 ----------------
+logs/
+*.log
+# 托管外部数据：文件导入 / HTTP 取数物化出来的 SQLite 库
+external.db
+external.db-journal
+external.db-wal
+external.db-shm
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ---------------- 本地配置与密钥 ----------------
+config.yaml
+config.local.yaml
+.env
+.env.local
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------------- 临时与调试产物 ----------------
+artifacts/
+tmp/
+# docs/ 下的手册、截图与设计文档要随仓库发布，
+# 这里只排除开发过程中产生的评估脚本与验证日志。
+docs/acceptance.py
+docs/tabs_fixture.py
+docs/eval_nl2sql.py
+docs/eval-baseline-*.json
+docs/golden_questions.json
+docs/verification.md
+*.tmp
+*.bak
+*.orig
+
+# ---------------- 编辑器 / 系统 ----------------
+.trae/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---------------- 依赖缓存 ----------------
+.pnpm-store/
+__pycache__/

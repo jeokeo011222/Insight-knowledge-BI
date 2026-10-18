@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-label="智观 BI 系统架构总览">
+  <rect width="1200" height="700" fill="#ffffff"/>
+  <defs>
+    <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#20a7c9"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;}
+    .h1{font-size:28px;font-weight:700;fill:#0f172a;}
+    .sub{font-size:15px;fill:#64748b;}
+    .tier{font-size:15px;font-weight:600;fill:#0e7490;}
+    .chip{font-size:16px;fill:#334155;}
+    .hint{font-size:13px;fill:#94a3b8;}
+  </style>
+
+  <text class="h1" x="60" y="52">智观 BI · 系统架构总览</text>
+  <text class="sub" x="60" y="80">前端独立部署（React SPA），后端为单一 Go 二进制，用 run / worker / beat 三个子命令扮演三种角色</text>
+
+  <!-- Tier 1 -->
+  <rect x="60" y="108" width="1080" height="100" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text class="tier" x="84" y="163">浏览器层</text>
+  <text class="hint" x="84" y="183">React SPA</text>
+  <g>
+    <rect x="250" y="138" width="76" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="288" y="164" text-anchor="middle">工作台</text>
+    <rect x="338" y="138" width="92" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="384" y="164" text-anchor="middle">探索分析</text>
+    <rect x="442" y="138" width="76" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="480" y="164" text-anchor="middle">仪表盘</text>
+    <rect x="530" y="138" width="92" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="576" y="164" text-anchor="middle">数据大屏</text>
+    <rect x="634" y="138" width="86" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="677" y="164" text-anchor="middle">AI 分析</text>
+    <rect x="732" y="138" width="84" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="774" y="164" text-anchor="middle">SQL Lab</text>
+    <rect x="828" y="138" width="76" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="866" y="164" text-anchor="middle">图表库</text>
+  </g>
+
+  <line x1="600" y1="212" x2="600" y2="242" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw)"/>
+
+  <!-- Tier 2 -->
+  <rect x="60" y="248" width="1080" height="100" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text class="tier" x="84" y="303">服务层</text>
+  <text class="hint" x="84" y="323">Go · 单二进制</text>
+  <g>
+    <rect x="250" y="278" width="140" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="320" y="304" text-anchor="middle">REST /api/v1/*</text>
+    <rect x="402" y="278" width="124" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="464" y="304" text-anchor="middle">WebSocket 推送</text>
+    <rect x="538" y="278" width="92" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="584" y="304" text-anchor="middle">查询引擎</text>
+    <rect x="642" y="278" width="112" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="698" y="304" text-anchor="middle">Agent 运行时</text>
+    <rect x="766" y="278" width="100" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="816" y="304" text-anchor="middle">RBAC 鉴权</text>
+    <rect x="878" y="278" width="92" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="924" y="304" text-anchor="middle">安全护栏</text>
+  </g>
+
+  <line x1="600" y1="352" x2="600" y2="382" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw)"/>
+
+  <!-- Tier 3 -->
+  <rect x="60" y="388" width="1080" height="100" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text class="tier" x="84" y="443">基础设施层</text>
+  <text class="hint" x="84" y="463">元数据 / 缓存 / 队列</text>
+  <g>
+    <rect x="250" y="418" width="264" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="382" y="444" text-anchor="middle">PostgreSQL 元数据库（85 张表）</text>
+    <rect x="526" y="418" width="176" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="614" y="444" text-anchor="middle">Redis 缓存 / 事件总线</text>
+    <rect x="714" y="418" width="132" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="780" y="444" text-anchor="middle">asynq 异步队列</text>
+    <rect x="858" y="418" width="132" height="40" rx="8" fill="#ffffff" stroke="#cbd5e1"/><text class="chip" x="924" y="444" text-anchor="middle">beat 定时调度</text>
+  </g>
+
+  <line x1="600" y1="492" x2="600" y2="522" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw)"/>
+
+  <!-- Tier 4 -->
+  <rect x="60" y="528" width="1080" height="100" rx="14" fill="#f0fdfa" stroke="#99f6e4"/>
+  <text class="tier" x="84" y="583">数据源层</text>
+  <text class="hint" x="84" y="603">外部数据接入</text>
+  <g>
+    <rect x="250" y="558" width="136" height="40" rx="8" fill="#ffffff" stroke="#5eead4"/><text class="chip" x="318" y="584" text-anchor="middle">60+ 种数据库引擎</text>
+    <rect x="398" y="558" width="140" height="40" rx="8" fill="#ffffff" stroke="#5eead4"/><text class="chip" x="468" y="584" text-anchor="middle">Excel / CSV 文件</text>
+    <rect x="550" y="558" width="132" height="40" rx="8" fill="#ffffff" stroke="#5eead4"/><text class="chip" x="616" y="584" text-anchor="middle">HTTP / API 接口</text>
+    <rect x="694" y="558" width="200" height="40" rx="8" fill="#ffffff" stroke="#5eead4"/><text class="chip" x="794" y="584" text-anchor="middle">托管 SQLite（external.db）</text>
+  </g>
+
+  <text class="hint" x="60" y="672">三种取数方式统一物化为托管表后再生成数据集，复用同一套查询 / 图表 / 探索 / 行级安全链路</text>
+</svg>

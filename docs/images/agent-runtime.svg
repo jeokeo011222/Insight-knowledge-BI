@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="智观 BI AI 分析 Agent 运行时">
+  <rect width="1200" height="660" fill="#ffffff"/>
+  <defs>
+    <marker id="arw2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#20a7c9"/>
+    </marker>
+    <marker id="arw2g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;}
+    .h1{font-size:28px;font-weight:700;fill:#0f172a;}
+    .sub{font-size:15px;fill:#64748b;}
+    .step{font-size:17px;font-weight:600;fill:#0f172a;}
+    .desc{font-size:13px;fill:#64748b;}
+    .grp{font-size:15px;font-weight:600;fill:#0e7490;}
+    .bul{font-size:14px;fill:#475569;}
+    .loop{font-size:12px;fill:#94a3b8;}
+  </style>
+
+  <text class="h1" x="60" y="52">智观 BI · AI 分析 Agent 运行时</text>
+  <text class="sub" x="60" y="80">plan → act → observe → answer 闭环推理，全程受四层护栏约束，写操作可整轮回滚</text>
+
+  <!-- left flow -->
+  <g>
+    <rect x="140" y="96" width="520" height="62" rx="10" fill="#f0fdfa" stroke="#5eead4"/>
+    <text class="step" x="164" y="124">用户提问</text>
+    <text class="desc" x="164" y="144">自然语言问数 · 多轮追问（session_id 串联，带入最近结论摘要）</text>
+
+    <line x1="400" y1="158" x2="400" y2="178" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw2)"/>
+
+    <rect x="140" y="180" width="520" height="62" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+    <text class="step" x="164" y="208">规划 Plan</text>
+    <text class="desc" x="164" y="228">拆解问题，检索 schema、指标口径与相似 SQL 范例</text>
+
+    <line x1="400" y1="242" x2="400" y2="262" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw2)"/>
+
+    <rect x="140" y="264" width="520" height="62" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+    <text class="step" x="164" y="292">执行 Act</text>
+    <text class="desc" x="164" y="312">调用只读工具：只读 SQL、指标字典、图表推荐</text>
+
+    <line x1="400" y1="326" x2="400" y2="346" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw2)"/>
+
+    <rect x="140" y="348" width="520" height="62" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+    <text class="step" x="164" y="376">观察 Observe</text>
+    <text class="desc" x="164" y="396">结果回注上下文，按剩余 Token 预算动态截断（保留首尾）</text>
+
+    <line x1="400" y1="410" x2="400" y2="430" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw2)"/>
+
+    <rect x="140" y="432" width="520" height="62" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+    <text class="step" x="164" y="460">判断 Decide</text>
+    <text class="desc" x="164" y="480">信息是否足够作答？空结果自动触发一次改写自检</text>
+
+    <line x1="400" y1="494" x2="400" y2="538" stroke="#20a7c9" stroke-width="2" marker-end="url(#arw2)"/>
+    <text class="desc" x="412" y="520">已足够</text>
+
+    <rect x="140" y="540" width="520" height="62" rx="10" fill="#f0fdfa" stroke="#5eead4"/>
+    <text class="step" x="164" y="568">最终答案</text>
+    <text class="desc" x="164" y="588">结论 + 归因下钻 + chart_spec（一键存为图表并追加到仪表盘）</text>
+
+    <!-- loop back -->
+    <path d="M 140 463 L 80 463 L 80 211 L 136 211" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arw2g)"/>
+    <text class="loop" x="70" y="340" transform="rotate(-90 70 340)" text-anchor="middle">未完成，继续规划</text>
+  </g>
+
+  <!-- right panel -->
+  <rect x="700" y="96" width="440" height="506" rx="14" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text class="grp" x="724" y="128">安全与护栏</text>
+  <text class="bul" x="724" y="156">• 四层护栏：最大步数 / 工具调用数 / Token 预算 / 运行超时</text>
+  <text class="bul" x="724" y="180">• 只读 SQL 守卫：词法结构校验 + 表白名单 + CTE 限定</text>
+  <text class="bul" x="724" y="204">• 危险函数黑名单：pg_read_file / dblink / read_csv …</text>
+  <text class="bul" x="724" y="228">• 会话级只读：PostgreSQL / MySQL / SQLite 三方言</text>
+  <text class="bul" x="724" y="252">• 列级可见性：agent_visible 隐藏列对模型完全不可见</text>
+  <text class="bul" x="724" y="276">• 结果脱敏：mask_type / pii_level 贯穿提示词到结果集</text>
+  <text class="bul" x="724" y="300">• 写工具先落快照，可按 run_id 逆向回滚</text>
+
+  <text class="grp" x="724" y="342">口径与记忆</text>
+  <text class="bul" x="724" y="370">• 指标字典（语义层）注入，禁止模型自造聚合口径</text>
+  <text class="bul" x="724" y="394">• 已确认问答对存入 SQL 记忆，规划时按相似度注入 top-3</text>
+  <text class="bul" x="724" y="418">• 归因分解由程序计算（share / cum_share），杜绝口算误差</text>
+
+  <text class="grp" x="724" y="460">可观测性</text>
+  <text class="bul" x="724" y="488">• 三层审计：agent run / tool call / audit log</text>
+  <text class="bul" x="724" y="512">• SSE 流式步骤时间线，前端实时回放推理过程</text>
+  <text class="bul" x="724" y="536">• NL2SQL 黄金问题评测集：准确率 / 确定性 / 时延 / Token</text>
+  <text class="bul" x="724" y="560">• 快照 diff 与回滚记录全部留痕</text>
+</svg>

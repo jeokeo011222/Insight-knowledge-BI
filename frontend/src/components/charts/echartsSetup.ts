@@ -1,0 +1,80 @@
+/**
+ * Tree-shaken ECharts registration. Only the series/components used by the
+ * registry are pulled in, keeping the bundle smaller than the full build.
+ */
+import * as echarts from 'echarts/core';
+import {
+  BarChart,
+  BoxplotChart,
+  CandlestickChart,
+  FunnelChart,
+  GaugeChart,
+  GraphChart,
+  HeatmapChart,
+  LineChart,
+  MapChart,
+  ParallelChart,
+  PieChart,
+  RadarChart,
+  SankeyChart,
+  ScatterChart,
+  SunburstChart,
+  TreeChart,
+  TreemapChart,
+} from 'echarts/charts';
+import {
+  CalendarComponent,
+  DataZoomComponent,
+  DatasetComponent,
+  GeoComponent,
+  GraphicComponent,
+  GridComponent,
+  LegendComponent,
+  MarkAreaComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+  ParallelComponent,
+  TitleComponent,
+  TooltipComponent,
+  TransformComponent,
+  VisualMapComponent,
+} from 'echarts/components';
+import { SVGRenderer } from 'echarts/renderers';
+
+echarts.use([
+  BarChart,
+  BoxplotChart,
+  CandlestickChart,
+  FunnelChart,
+  GaugeChart,
+  GraphChart,
+  HeatmapChart,
+  LineChart,
+  MapChart,
+  ParallelChart,
+  PieChart,
+  RadarChart,
+  SankeyChart,
+  ScatterChart,
+  SunburstChart,
+  TreeChart,
+  TreemapChart,
+  CalendarComponent,
+  DataZoomComponent,
+  DatasetComponent,
+  GeoComponent,
+  GraphicComponent,
+  GridComponent,
+  LegendComponent,
+  MarkAreaComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+  ParallelComponent,
+  TitleComponent,
+  TooltipComponent,
+  TransformComponent,
+  VisualMapComponent,
+  SVGRenderer,
+]);
+
+export { echarts };
