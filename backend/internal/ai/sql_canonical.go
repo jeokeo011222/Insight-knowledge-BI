@@ -159,6 +159,27 @@ func canonLex(s string) ([]canonTok, bool) {
 				return nil, false
 			}
 			i += end + 4
+		case c == '$' && i+1 < len(s) && (s[i+1] == '$' || isWordByte(s[i+1])):
+			// Postgres dollar-quoted string: $tag$ … $tag$. Its body may contain
+			// quotes, so it has to be consumed as one literal before those bytes
+			// are mistaken for the start of a string. The guard's tokenizer
+			// already understands this form; the two must agree, otherwise the
+			// canonicalizer silently gives up on statements the guard accepts.
+			j := i + 1
+			for j < len(s) && s[j] != '$' {
+				j++
+			}
+			if j >= len(s) {
+				return nil, false
+			}
+			tag := s[i : j+1]
+			end := strings.Index(s[j+1:], tag)
+			if end < 0 {
+				return nil, false
+			}
+			stop := j + 1 + end + len(tag)
+			out = append(out, canonTok{kind: canonString, text: s[i:stop], upper: s[i:stop], depth: depth})
+			i = stop
 		case c == '\'':
 			start := i
 			i++
@@ -183,7 +204,7 @@ func canonLex(s string) ([]canonTok, bool) {
 				return nil, false
 			}
 			out = append(out, canonTok{kind: canonString, text: s[start:i], upper: s[start:i], depth: depth})
-		case c == '"' || c == '`' || c == '[':
+		case c == '"' || c == '`' || (c == '[' && !isSubscriptAt(s, i)):
 			closing := c
 			if c == '[' {
 				closing = ']'
@@ -245,6 +266,31 @@ func canonLex(s string) ([]canonTok, bool) {
 }
 
 /* -------------------------------------------------------------- transforms */
+
+// isSubscriptAt reports whether s[i] opens an array subscript rather than
+// quoting an identifier.
+//
+// `[` means two different things in SQL: SQL Server quotes identifiers with it
+// (`[my column]`), while PostgreSQL subscripts arrays with it (`tags[1]`). The
+// two are told apart by position — a subscript always follows an identifier, a
+// number or a closing bracket with no space in between, whereas a quoted
+// identifier opens a name, so it follows the start of the statement, a space or
+// punctuation. Reading `tags[1]` as a quoted identifier re-emitted it as
+// `tags "1"`, which parses as an alias and quietly returns the wrong rows, and
+// the guard had no reason to reject it.
+func isSubscriptAt(s string, i int) bool {
+	if i == 0 {
+		return false
+	}
+	switch s[i-1] {
+	case '_', '$', ')', ']', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		return true
+	case ' ':
+		return false
+	}
+	c := s[i-1]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80
+}
 
 // isFlatQuery reports whether the statement is a single SELECT at depth 0 with
 // no CTE and no set operation: the only shape where renaming projection aliases
@@ -615,21 +661,71 @@ func canonTables(toks []canonTok, opt CanonicalOptions) []canonTok {
 	}
 	schema := strings.ToLower(strings.TrimSpace(opt.Schema))
 	out := make([]canonTok, 0, len(toks)+2)
+	// tablePos[depth] is true while the next name at that depth is the table of
+	// a FROM/JOIN item. Qualifying is only safe in that position: `FROM t t`
+	// (an alias that happens to match the table) and `FROM (…) t` (a subquery
+	// alias) are both valid SQL that this function used to turn into
+	// `schema.t`, i.e. into a statement that no longer parses.
+	tablePos := map[int]bool{}
+	inFrom := map[int]bool{}
 	for i := 0; i < len(toks); i++ {
 		t := toks[i]
+		if t.kind == canonWord {
+			switch t.upper {
+			case "FROM", "JOIN":
+				tablePos[t.depth] = true
+				inFrom[t.depth] = true
+			case "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "OFFSET",
+				"UNION", "EXCEPT", "INTERSECT", "WINDOW":
+				tablePos[t.depth] = false
+				inFrom[t.depth] = false
+			case "ON", "USING", "SELECT":
+				tablePos[t.depth] = false
+			}
+		}
+		// A subquery or a table function in table position: the name that
+		// follows the closing paren is an alias, never the table itself.
+		if t.kind == canonPunct && t.text == "(" && tablePos[t.depth] {
+			tablePos[t.depth] = false
+		}
+		if t.kind == canonPunct && t.text == "," && inFrom[t.depth] {
+			tablePos[t.depth] = true
+		}
+		qualified := i >= 2 && toks[i-1].kind == canonPunct && toks[i-1].text == "." && isNameTok(toks[i-2])
 		if !isNameTok(t) || !strings.EqualFold(t.text, table) {
+			// A non-matching *identifier* in table position consumes it. The
+			// keywords that set the position (FROM, JOIN) are words too, so they
+			// must not consume it themselves.
+			if isNameTok(t) && !canonKeywords[strings.ToLower(t.text)] && tablePos[t.depth] {
+				if i+1 < len(toks) && toks[i+1].kind == canonPunct && toks[i+1].text == "." {
+					// `other.table`: the schema comes first, the table is next.
+					out = append(out, t)
+					continue
+				}
+				tablePos[t.depth] = false
+			}
 			out = append(out, t)
 			continue
 		}
-		qualified := len(out) >= 2 && out[len(out)-1].kind == canonPunct && out[len(out)-1].text == "." &&
-			isNameTok(out[len(out)-2])
 		if qualified {
-			if schema != "" {
-				out[len(out)-2] = canonTok{kind: canonWord, text: schema, upper: strings.ToUpper(schema), depth: t.depth}
-			} else {
-				// Drop `schema .` entirely.
+			prefix := strings.ToLower(toks[i-2].text)
+			switch {
+			case schema != "" && prefix == schema:
+				// Already the canonical spelling.
+			case schema == "" && prefix == "public":
+				// The dataset declares no schema; drop the default one so
+				// `public.t` and `t` converge. Any other prefix is left alone:
+				// rewriting it would silently point the query at a different
+				// table than the one the statement named.
 				out = out[:len(out)-2]
 			}
+			out = append(out, t)
+			tablePos[t.depth] = false
+			continue
+		}
+		if !tablePos[t.depth] {
+			// An alias, a column, or a CTE that shares the table's name. Leaving
+			// it alone is always safe; qualifying it is not.
 			out = append(out, t)
 			continue
 		}
@@ -640,6 +736,7 @@ func canonTables(toks []canonTok, opt CanonicalOptions) []canonTok {
 			)
 		}
 		out = append(out, t)
+		tablePos[t.depth] = false
 	}
 	return out
 }
@@ -803,6 +900,8 @@ func needsSpace(toks []canonTok, i, _ int) bool {
 	case prev.kind == canonPunct && (prev.text == "(" || prev.text == "." || prev.text == "::"):
 		return false
 	case cur.kind == canonPunct && cur.text == "[":
+		return false
+	case cur.kind == canonPunct && cur.text == "]":
 		return false
 	case prev.kind == canonPunct && prev.text == "[":
 		return false

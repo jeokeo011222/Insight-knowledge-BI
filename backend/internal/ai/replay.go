@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"superset/internal/ai/registry"
@@ -125,6 +126,15 @@ func (s *Service) storeReplay(ctx context.Context, run *models.AIAgentRun, plan 
 		}
 		return
 	}
+	// Without a result fingerprint there is nothing to compare against on the
+	// way back in, so the record could never be used. Storing it would only
+	// inflate the table with rows that are guaranteed to miss.
+	if strings.TrimSpace(resultHash) == "" {
+		if s.Log != nil {
+			s.Log.Debug("replay not recorded: no result fingerprint to verify a replay against")
+		}
+		return
+	}
 	var writes int64
 	if err := s.DB.WithContext(ctx).Model(&models.AIToolCallLog{}).
 		Where("run_id = ? AND side_effect <> ?", run.ID, "read").Count(&writes).Error; err == nil && writes > 0 {
@@ -180,20 +190,22 @@ func (s *Service) storeReplay(ctx context.Context, run *models.AIAgentRun, plan 
 	s.DB.WithContext(ctx).Where("expires_on < ?", now.Add(-24*time.Hour)).Delete(&models.AIRunReplay{})
 }
 
-// hitReplay bumps the reuse counter, so the console can show how much of the
-// traffic the replay layer absorbed.
+// hitReplay bumps the reuse counter and extends the window, in one statement.
+//
+// The increment is done in SQL (`hits + 1`) rather than by writing back the
+// value that was read during the lookup: two people asking the same question at
+// the same moment would otherwise both write `hits+1` and count as one hit.
 func (s *Service) hitReplay(ctx context.Context, rec *models.AIRunReplay) {
 	if s.DB == nil || rec == nil || rec.ID == 0 {
 		return
 	}
-	s.DB.WithContext(ctx).Model(&models.AIRunReplay{}).Where("id = ?", rec.ID).
-		Updates(map[string]any{"hits": rec.Hits + 1})
-	// Extend the window: a question asked twice in a row is likely to be asked
-	// once more, and the result hash guard still protects correctness.
+	updates := map[string]any{"hits": gorm.Expr("hits + 1")}
+	// A question asked twice in a row is likely to be asked once more, and the
+	// result hash guard still protects correctness.
 	if ttl := s.replayTTL(); ttl > 0 {
-		s.DB.WithContext(ctx).Model(&models.AIRunReplay{}).Where("id = ?", rec.ID).
-			Update("expires_on", time.Now().Add(ttl))
+		updates["expires_on"] = time.Now().Add(ttl)
 	}
+	s.DB.WithContext(ctx).Model(&models.AIRunReplay{}).Where("id = ?", rec.ID).Updates(updates)
 }
 
 // agentIDOfRun pulls the agent id out of the run scope carried by ctx.

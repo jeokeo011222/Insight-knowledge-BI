@@ -125,7 +125,12 @@ func (p *planner) systemPrompt(actx registry.AIContext, scope *runScope, questio
 // agentPromptVersion stamps the prompt contract. It takes part in the replay
 // key, so changing the prompt invalidates replayable answers instead of serving
 // a result the current prompt would never have produced.
-const agentPromptVersion = "p2026-10-18-1"
+//
+// It is derived from the contract text rather than maintained by hand: a hand
+// written constant is a step someone forgets, and the failure mode of
+// forgetting is invisible — the cache keeps serving answers in the old dialect
+// while the prompt claims a new one.
+var agentPromptVersion = "ct-" + hashText(sqlContractBlock(false) + "|" + sqlContractBlock(true))[:12]
 
 // sqlContractBlock is the fixed SQL template every run is held to.
 //

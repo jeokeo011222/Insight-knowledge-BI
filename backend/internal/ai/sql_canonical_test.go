@@ -1,6 +1,9 @@
 package ai
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 var canonOpt = CanonicalOptions{
 	Table:   "birth_names",
@@ -90,6 +93,13 @@ func TestCanonicalLiteralsAndIdentifiers(t *testing.T) {
 	if want := "SELECT COUNT(*) AS count\nFROM birth_names\nWHERE name = 'O''Brien'"; got != want {
 		t.Fatalf("\n got: %q\nwant: %q", got, want)
 	}
+	// Dollar-quoted literals contain quotes without escaping. The guard's
+	// tokenizer already understood them; when the canonicalizer did not, it fell
+	// back to "unparsable" and every such statement skipped normalization.
+	got = canon(`select count(1) from "birth_names" where x = $tag$ a 'b' $tag$`)
+	if want := "SELECT COUNT(*) AS count\nFROM birth_names\nWHERE x = $tag$ a 'b' $tag$"; got != want {
+		t.Fatalf("\n got: %q\nwant: %q", got, want)
+	}
 }
 
 func TestCanonicalOperators(t *testing.T) {
@@ -159,5 +169,64 @@ func TestResultFingerprintIgnoresRowOrder(t *testing.T) {
 	}
 	if resultFingerprint(nil) != "" {
 		t.Fatal("nil rows have no fingerprint")
+	}
+}
+
+// TestCanonicalKeepsArraySubscripts guards the bug that made `tags[1]` come out
+// as `tags "1"`: the lexer treated every `[` as SQL Server identifier quoting,
+// so a Postgres subscript turned into an alias and the query returned the wrong
+// rows without any error.
+func TestCanonicalKeepsArraySubscripts(t *testing.T) {
+	cases := map[string]string{
+		`SELECT COUNT(*) FROM birth_names WHERE tags[1] = 'x'`: "WHERE tags[1] = 'x'",
+		`SELECT COUNT(*) FROM birth_names WHERE arr[i][2] > 0`: "WHERE arr[i][2] > 0",
+		`SELECT COUNT(*) FROM birth_names WHERE f(num)[1] = 3`: "(num)[1] = 3",
+	}
+	for in, want := range cases {
+		if got := canon(in); !strings.Contains(got, want) {
+			t.Errorf("subscript lost:\n  in:   %s\n  got:  %q\n  want: %q", in, got, want)
+		}
+	}
+	// SQL Server-style quoted identifiers must still be understood as names.
+	got := canonicalizeSQL(`SELECT [gender] FROM [birth_names]`, canonOpt)
+	if got != "SELECT gender\nFROM birth_names" {
+		t.Errorf("bracketed identifier: got %q", got)
+	}
+}
+
+// TestCanonicalQualifiesOnlyTablePositions guards the second bug of the same
+// family: any name equal to the table was schema-qualified, including an alias.
+// `FROM t t` became `FROM schema.t schema.t` and `FROM (…) t` became
+// `FROM (…) schema.t` — both syntax errors, produced by the layer that is
+// supposed to make SQL more stable.
+func TestCanonicalQualifiesOnlyTablePositions(t *testing.T) {
+	opt := CanonicalOptions{
+		Schema: "analytics", Table: "birth_names",
+		Columns: []string{"id", "name", "gender", "state", "num", "ds"},
+	}
+	cases := []struct{ in, want string }{
+		{
+			`SELECT COUNT(*) FROM birth_names birth_names`,
+			"FROM analytics.birth_names birth_names",
+		},
+		{
+			`SELECT COUNT(*) FROM (SELECT num FROM birth_names) birth_names`,
+			"FROM (SELECT num FROM analytics.birth_names) birth_names",
+		},
+		{
+			`SELECT COUNT(*) FROM birth_names bn JOIN birth_names b2 ON bn.id = b2.id`,
+			"FROM analytics.birth_names bn JOIN analytics.birth_names b2 ON bn.id = b2.id",
+		},
+	}
+	for _, c := range cases {
+		if got := canonicalizeSQL(c.in, opt); !strings.Contains(got, c.want) {
+			t.Errorf("bad qualification:/n  in:   %s\n  got:  %q\n  want: %q", c.in, got, c.want)
+		}
+	}
+	// A schema we were not told about is left alone: rewriting it would point
+	// the statement at a table it never named.
+	other := canonicalizeSQL(`SELECT COUNT(*) FROM archive.birth_names`, opt)
+	if !strings.Contains(other, "FROM archive.birth_names") {
+		t.Errorf("foreign schema rewritten: %q", other)
 	}
 }

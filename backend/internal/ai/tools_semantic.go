@@ -184,6 +184,10 @@ func RunSemanticQuery(ctx context.Context, s *Service, datasetID int, args json.
 	}
 	out := base
 	out["sql"] = res.SQL
+	// `sql` is what the engine ran (wrapped in the row-limit subquery); the
+	// statement the builder produced is what a replay re-executes, exactly as
+	// query_executor reports it.
+	out["statement"] = built.SQL
 	out["rows"] = res.Data
 	out["colnames"] = res.ColNames
 	out["rowcount"] = res.RowCount

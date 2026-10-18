@@ -375,24 +375,6 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 	}
 	audit.FinishRun(runCtx, run, status, tokenUsed, steps, toolCalls, final, errMsg, latency)
 
-	// NL→SQL memory (W-03): a successful, non-exploratory run is captured for
-	// review. It stays out of recall until approved, so a wrong example cannot
-	// teach the model a wrong join.
-	if status == "done" {
-		s.autoCaptureMemory(runCtx, run, lastSQL, lastRows)
-		// Answer replay: record what this question resolved to, so asking it
-		// again within the TTL skips the model entirely.
-		var resultHash string
-		if lastResult != nil {
-			resultHash = resultFingerprint(lastResult["rows"])
-		}
-		replaySQL := lastStatement
-		if replaySQL == "" {
-			replaySQL = lastSQL
-		}
-		s.storeReplay(runCtx, run, plan, replaySQL, final, resultHash, lastRows, runArtifacts)
-	}
-
 	res.Status = status
 	res.Markdown = final
 	res.StepCount = steps
@@ -414,6 +396,32 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 		FirstTokenMS: firstTokenMS, ToolErrorCount: toolErrors,
 		EmptyResultCount: emptyResults, SelfCheckCount: selfChecks,
 	})
+
+	// Bookkeeping runs after the answer is on the wire, so a slow metadata
+	// database cannot add latency to the answer itself.
+	//
+	// NL→SQL memory (W-03): a successful, non-exploratory run is captured for
+	// review. It stays out of recall until approved, so a wrong example cannot
+	// teach the model a wrong join.
+	if status == "done" {
+		s.autoCaptureMemory(runCtx, run, lastSQL, lastRows)
+		// Answer replay: record what this question resolved to, so asking it
+		// again within the TTL skips the model entirely. A caller that turned
+		// the layer off (the determinism benchmark) also turns off recording —
+		// otherwise a measurement run quietly seeds the cache it is measuring
+		// and the next ordinary request replays it.
+		if !in.NoReplay {
+			var resultHash string
+			if lastResult != nil {
+				resultHash = resultFingerprint(lastResult["rows"])
+			}
+			replaySQL := lastStatement
+			if replaySQL == "" {
+				replaySQL = lastSQL
+			}
+			s.storeReplay(runCtx, run, plan, replaySQL, final, resultHash, lastRows, runArtifacts)
+		}
+	}
 	return res
 }
 
