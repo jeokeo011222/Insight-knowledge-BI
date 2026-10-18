@@ -387,6 +387,32 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 	res.SelfCheckCount = selfChecks
 	res.SQLHash = run.SQLHash
 
+	// Answer replay: record what this question resolved to, so asking it again
+	// within the TTL skips the model entirely. A caller that turned the layer
+	// off (the determinism benchmark) also turns off recording — otherwise a
+	// measurement run quietly seeds the cache it is measuring and the next
+	// ordinary request replays it.
+	//
+	// This has to happen *before* the answer goes on the wire. A client that
+	// reads the answer and immediately asks the same question again is exactly
+	// the traffic this layer exists for; if the record is still in flight, that
+	// request misses and re-generates. Measured: with the write after the event
+	// and a 1s gap between runs, replay hit 50%; with the write before, 100%.
+	// The cost is one small INSERT on the critical path, which is the right
+	// trade — a replay layer that loses the race is worse than useless, because
+	// it looks like it is working.
+	if status == "done" && !in.NoReplay {
+		var resultHash string
+		if lastResult != nil {
+			resultHash = resultFingerprint(lastResult["rows"])
+		}
+		replaySQL := lastStatement
+		if replaySQL == "" {
+			replaySQL = lastSQL
+		}
+		s.storeReplay(runCtx, run, plan, replaySQL, final, resultHash, lastRows, runArtifacts)
+	}
+
 	if failure != nil {
 		emitEvent(emit, EventError, ErrorEvent{RunID: run.ID, Message: errMsg})
 	}
@@ -397,30 +423,14 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 		EmptyResultCount: emptyResults, SelfCheckCount: selfChecks,
 	})
 
-	// Bookkeeping runs after the answer is on the wire, so a slow metadata
-	// database cannot add latency to the answer itself.
+	// Less urgent bookkeeping stays after the answer is on the wire, so a slow
+	// metadata database cannot add latency to the answer itself.
 	//
 	// NL→SQL memory (W-03): a successful, non-exploratory run is captured for
 	// review. It stays out of recall until approved, so a wrong example cannot
 	// teach the model a wrong join.
 	if status == "done" {
 		s.autoCaptureMemory(runCtx, run, lastSQL, lastRows)
-		// Answer replay: record what this question resolved to, so asking it
-		// again within the TTL skips the model entirely. A caller that turned
-		// the layer off (the determinism benchmark) also turns off recording —
-		// otherwise a measurement run quietly seeds the cache it is measuring
-		// and the next ordinary request replays it.
-		if !in.NoReplay {
-			var resultHash string
-			if lastResult != nil {
-				resultHash = resultFingerprint(lastResult["rows"])
-			}
-			replaySQL := lastStatement
-			if replaySQL == "" {
-				replaySQL = lastSQL
-			}
-			s.storeReplay(runCtx, run, plan, replaySQL, final, resultHash, lastRows, runArtifacts)
-		}
 	}
 	return res
 }
