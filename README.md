@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/logo.svg" alt="智观 BI" width="88" />
+<img src="frontend/public/logo.png" alt="智观 BI" width="88" />
 
 # 智观 BI
 

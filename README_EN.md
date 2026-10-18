@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/logo.svg" alt="ZG BI" width="88" />
+<img src="frontend/public/logo.png" alt="ZG BI" width="88" />
 
 # ZG BI
 
