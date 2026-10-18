@@ -189,6 +189,7 @@ export default function SqlLab() {
     const keyword = treeSearch.trim().toLowerCase();
     const nodes: DataNode[] = [];
     catalog.forEach(schemaNode => {
+      const failed = schemaNode.tables_error;
       const tables = (schemaNode.children ?? []).filter(
         table => !keyword || table.name.toLowerCase().includes(keyword),
       );
@@ -196,18 +197,32 @@ export default function SqlLab() {
         return;
       }
       nodes.push({
-        title: `${schemaNode.name} (${tables.length})`,
+        // A schema whose tables could not be listed shows why, instead of an
+        // indistinguishable "(0)" that reads like an empty database.
+        title: failed
+          ? `${schemaNode.name} (${t('sqllab.catalog_schema_error')})`
+          : `${schemaNode.name} (${tables.length})`,
         key: `schema:${schemaNode.name}`,
         selectable: false,
-        children: tables.map(table => ({
-          title: table.name,
-          key: `table:${schemaNode.name}.${table.name}`,
-          isLeaf: true,
-        })),
+        children: failed
+          ? [
+              {
+                title: failed,
+                key: `schema:${schemaNode.name}:error`,
+                isLeaf: true,
+                selectable: false,
+                disabled: true,
+              },
+            ]
+          : tables.map(table => ({
+              title: table.name,
+              key: `table:${schemaNode.name}.${table.name}`,
+              isLeaf: true,
+            })),
       });
     });
     return nodes;
-  }, [catalog, treeSearch]);
+  }, [catalog, treeSearch, t]);
 
   const insertTable = (key: string) => {
     const qualified = tableSql.get(key);

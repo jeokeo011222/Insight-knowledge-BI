@@ -708,7 +708,7 @@ func (d *databaseAPI) catalog(w http.ResponseWriter, r *http.Request) {
 		if schema == "" {
 			continue
 		}
-		tableRows, _ := h.Query(r.Context(), fmt.Sprintf(h.spec.TablesQuery(), escapeSQL(schema)))
+		tableRows, tableErr := h.Query(r.Context(), fmt.Sprintf(h.spec.TablesQuery(), escapeSQL(schema)))
 		tables := make([]map[string]any, 0, len(tableRows))
 		for _, tr := range tableRows {
 			name := rowText(tr, "table_name", "tablename", "name")
@@ -720,9 +720,16 @@ func (d *databaseAPI) catalog(w http.ResponseWriter, r *http.Request) {
 				"extra": map[string]any{"schema": schema},
 			})
 		}
-		tree = append(tree, map[string]any{
+		node := map[string]any{
 			"name": schema, "type": "schema", "children": tables,
-		})
+		}
+		if tableErr != nil {
+			// One unreadable schema must not fail the whole tree, but silently
+			// returning an empty list makes a broken query look like "0 tables".
+			// The UI reads this field and says so instead.
+			node["tables_error"] = tableErr.Error()
+		}
+		tree = append(tree, node)
 	}
 	server.WriteJSON(w, http.StatusOK, map[string]any{"result": tree})
 }

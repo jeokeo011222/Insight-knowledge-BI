@@ -614,6 +614,7 @@ export const zhDomain = {
   'sqllab.sql_required': '请输入 SQL',
   'sqllab.sql_required_first': '请先输入 SQL',
   'sqllab.query_failed': '查询失败',
+  'sqllab.catalog_schema_error': '读取失败',
   'sqllab.exec_failed': '查询执行失败',
   'sqllab.completed': '查询完成，返回 {count} 行',
   'sqllab.stopped': '已停止等待查询结果',

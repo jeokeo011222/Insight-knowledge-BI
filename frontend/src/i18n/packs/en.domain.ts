@@ -614,6 +614,7 @@ export const enDomain = {
   'sqllab.sql_required': 'Please enter SQL',
   'sqllab.sql_required_first': 'Please enter SQL first',
   'sqllab.query_failed': 'Query failed',
+  'sqllab.catalog_schema_error': 'Load failed',
   'sqllab.exec_failed': 'Query execution failed',
   'sqllab.completed': 'Query finished, {count} rows returned',
   'sqllab.stopped': 'Stopped waiting for query results',

@@ -176,6 +176,8 @@ export interface CatalogNode {
   type: 'database' | 'schema' | 'table' | string;
   children?: CatalogNode[];
   extra?: { schema?: string };
+  /** Present when the backend could not list this schema's tables. */
+  tables_error?: string;
 }
 
 /* -------------------------------------------------------------- datasets */
