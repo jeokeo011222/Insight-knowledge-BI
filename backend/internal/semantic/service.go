@@ -439,6 +439,27 @@ func (s *Service) ColdStart(ctx context.Context, datasetID int, force bool) (*Mo
 	}
 
 	fields := make([]FieldInput, 0, len(cols)+len(metrics))
+	// Field names are unique within a model, but a dataset may well declare a
+	// metric whose name equals one of its columns (e.g. metric "factor_id" over
+	// column "factor_id"). Keeping both under distinct names is what lets a cold
+	// start succeed on otherwise valid input instead of failing with "字段重复".
+	taken := make(map[string]struct{}, len(cols)+len(metrics))
+	takeName := func(base, suffix string) string {
+		if _, ok := taken[base]; !ok {
+			taken[base] = struct{}{}
+			return base
+		}
+		for i := 1; ; i++ {
+			cand := base + "_" + suffix
+			if i > 1 {
+				cand = fmt.Sprintf("%s_%s_%d", base, suffix, i)
+			}
+			if _, ok := taken[cand]; !ok {
+				taken[cand] = struct{}{}
+				return cand
+			}
+		}
+	}
 	order := 0
 	for _, c := range cols {
 		kind := models.FieldKindColumn
@@ -450,17 +471,25 @@ func (s *Service) ColdStart(ctx context.Context, datasetID int, force bool) (*Mo
 			desc = c.VerboseName
 		}
 		fields = append(fields, FieldInput{
-			Name: c.ColumnName, Kind: kind, Type: c.Type, Description: desc,
+			Name: takeName(c.ColumnName, "col"), Kind: kind, Type: c.Type, Description: desc,
 			Hidden: !c.AgentVisible, PIILevel: c.PIILevel,
 			IsDttm: c.IsDttm, SortOrder: order,
 		})
 		order++
 	}
 	for _, mt := range metrics {
+		base := NormalizeModelName(mt.MetricName)
+		name := takeName(base, "metric")
+		desc := firstNonEmpty(mt.Description, mt.VerboseName)
+		if name != base {
+			// Keep the rename visible: the operator must be able to tell why the
+			// field is not called what the metric is called.
+			desc = strings.TrimSpace(fmt.Sprintf("%s（指标名 %q 与已有字段重名，生成时改为 %q）", desc, base, name))
+		}
 		fields = append(fields, FieldInput{
-			Name: NormalizeModelName(mt.MetricName), Kind: models.FieldKindMetric,
+			Name: name, Kind: models.FieldKindMetric,
 			Expression: mt.Expression, Type: "number",
-			Description: firstNonEmpty(mt.Description, mt.VerboseName),
+			Description: desc,
 			SortOrder:   order,
 		})
 		order++
