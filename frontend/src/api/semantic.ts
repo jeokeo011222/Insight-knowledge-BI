@@ -7,21 +7,26 @@ import { client } from './client';
  * separate object that can drift away from it.
  */
 
+/**
+ * Paths are relative to the API base: the shared `client` already prefixes
+ * every request with `/api/v1` (client.ts `buildUrl`). Only `exportPath` is
+ * later combined with `BASE`, because it is opened directly by the browser.
+ */
 const BASE = '/api/v1';
 
 export const semanticEndpoints = {
-  models: (datasetID: number | string) => `${BASE}/dataset/${datasetID}/semantic/models`,
-  coldStart: (datasetID: number | string) => `${BASE}/dataset/${datasetID}/semantic/cold-start`,
-  rules: (datasetID: number | string) => `${BASE}/dataset/${datasetID}/semantic/rules`,
-  export: (datasetID: number | string) => `${BASE}/dataset/${datasetID}/semantic/export`,
-  import: (datasetID: number | string) => `${BASE}/dataset/${datasetID}/semantic/import`,
-  gaps: (datasetID: number | string) => `${BASE}/dataset/${datasetID}/semantic/gaps`,
-  applyGap: (datasetID: number | string) => `${BASE}/dataset/${datasetID}/semantic/gaps/apply`,
-  model: (id: number | string) => `${BASE}/semantic/model/${id}`,
-  publish: (id: number | string) => `${BASE}/semantic/model/${id}/publish`,
-  relationships: (id: number | string) => `${BASE}/semantic/model/${id}/relationships`,
-  relationship: (id: number | string) => `${BASE}/semantic/relationship/${id}`,
-  rule: (id: number | string) => `${BASE}/semantic/rule/${id}`,
+  models: (datasetID: number | string) => `/dataset/${datasetID}/semantic/models`,
+  coldStart: (datasetID: number | string) => `/dataset/${datasetID}/semantic/cold-start`,
+  rules: (datasetID: number | string) => `/dataset/${datasetID}/semantic/rules`,
+  exportPath: (datasetID: number | string) => `/dataset/${datasetID}/semantic/export`,
+  import: (datasetID: number | string) => `/dataset/${datasetID}/semantic/import`,
+  gaps: (datasetID: number | string) => `/dataset/${datasetID}/semantic/gaps`,
+  applyGap: (datasetID: number | string) => `/dataset/${datasetID}/semantic/gaps/apply`,
+  model: (id: number | string) => `/semantic/model/${id}`,
+  publish: (id: number | string) => `/semantic/model/${id}/publish`,
+  relationships: (id: number | string) => `/semantic/model/${id}/relationships`,
+  relationship: (id: number | string) => `/semantic/relationship/${id}`,
+  rule: (id: number | string) => `/semantic/rule/${id}`,
 } as const;
 
 /** Field kinds. `column` is a passthrough of a physical column. */
@@ -289,7 +294,8 @@ export function semanticExportUrl(
   datasetID: number,
   format: 'json' | 'yaml' | 'osi' | 'osi-json' = 'json',
 ): string {
-  return `${semanticEndpoints.export(datasetID)}?format=${format}`;
+  // Opened directly by the browser (window.open), so it needs the full path.
+  return `${BASE}${semanticEndpoints.exportPath(datasetID)}?format=${format}`;
 }
 
 export interface SemanticImportResult {
