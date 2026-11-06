@@ -1,0 +1,36 @@
+feat: Pulse 主动洞察 · 成本分级路由 · chart_design 闭环 · 骨架屏 · 响应式
+
+新增功能:
+- AIMetricSubscription + AIMetricEvent 两张表 + pulse.go: cron runner 订阅调度，
+  自动取指标值、异常检测（threshold/zscore/yoy）、LLM 写 NL 摘要、Slack/邮件投递
+- 成本分级路由: routeIntent 关键词分类 + runScope.Tier + ProviderConfig.FastModel，
+  单指标读走 fast model，归因/趋势/写操作走完整 reasoning
+- chart_design 闭环: insight executor 末尾自动调 chart_writer 建图，
+  Agent 说人话 → 自动建真图表
+
+安全与质量:
+- listResultW 不再把 DB 原文返回前端，改走 classifyListDBError 分类映射
+- EXPLAIN 成本闸扩展到 MySQL（isMySQLURI + explainGuardMySQL）
+- 结果合理性自检: checkResultPlausibility 检测 0 行/宽列/90%+ 空值率 → Warnings 透传给 Agent
+- NL2SQL prompt 硬编码中文国际化: 4 个 prompt const → 4 个 language-aware 函数，7 处调用点
+
+前端体验:
+- 通用 Skeleton 组件 (SkeletonBlock / SkeletonRows / SkeletonTable / SkeletonChart / SkeletonKpi)
+- Shimmer CSS + 统一响应式断点 (576/768/1024px)
+- AiStreamingText: antd Spin → 3 点打字骨架 (CSS 动画)
+- Explore 页面 running 骨架 + 三态条件链修复 (之前 running 显示 Empty 而不是骨架)
+- Drawer 宽度从 460px 硬编码 → 420px + CSS 断点控制 (full-bleed on narrow screens)
+- 图表硬编码颜色修复: categorical.tsx treemap + geo.tsx emphasis label → MARK_BORDER_COLOR
+- hooks 顺序违规 + artifacts 重复加载 已修 (此前迭代)
+
+基础设施:
+- .github/workflows/ci.yml: PR 跑 build + vet + test + tsc + dry-evals，nightly 跑 live-evals
+- pulse scheduler 异步挂起 beat 进程
+
+全部验证:
+- go build ./... ✅
+- go vet ./... ✅
+- go test ./... -count=1 ✅ (20 包全绿)
+- npx tsc --noEmit ✅
+
+README 重写: GitHub 爆款模式，差异化对比表 vs Superset/Quick BI/Tableau，快速体验前置

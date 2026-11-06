@@ -133,6 +133,8 @@ func init() {
 		&AIChatHistory{},
 		&AIAuditLog{},
 		&AIMetric{},
+		&AIMetricSubscription{},
+		&AIMetricEvent{},
 		// NL→SQL examples. Registered before the vector table so a deployment
 		// without pgvector still gets the memory feature.
 		&AISQLMemory{},

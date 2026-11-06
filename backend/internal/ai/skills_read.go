@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"superset/internal/ai/registry"
 )
 
@@ -70,14 +72,38 @@ func fetchSchema(ctx context.Context, rt *registry.ToolRuntime, datasetID int, q
 	return string(b)
 }
 
-const (
-	nl2sqlSystemPrompt     = `你是资深数据分析师兼 SQL 工程师。只输出一个 JSON 对象，不要任何解释文字，也不要代码块围栏。`
-	insightSystemPrompt    = `你是资深数据分析师。基于给定的 SQL 与查询结果，用中文 Markdown 输出：先给结论，再给关键证据（指标/维度/异常点），最后给建议。严禁编造结果中不存在的数据；数据不足时如实说明。`
-	chartSystemPrompt      = `你是资深 BI 可视化专家。只输出一个 JSON 对象，不要任何解释文字，也不要代码块围栏。`
-	sqlExplainSystemPrompt = `你是资深 SQL 工程师。用中文 Markdown 面向用户说明或优化给定的 SQL：` +
+// nl2sqlSystemPrompt returns the system prompt for NL→SQL generation. Language
+// is chosen per call so a locale=en run does not receive Chinese prose mixed
+// into its English reply.
+func nl2sqlSystemPrompt(lang string) string {
+	if isEnglish(lang) {
+		return `You are a senior data analyst and SQL engineer. Output exactly one JSON object — no prose, no code fences.`
+	}
+	return `你是资深数据分析师兼 SQL 工程师。只输出一个 JSON 对象，不要任何解释文字，也不要代码块围栏。`
+}
+
+func insightSystemPrompt(lang string) string {
+	if isEnglish(lang) {
+		return `You are a senior data analyst. Given the SQL and result rows, write Markdown in the user's language: lead with the conclusion, then the evidence (metrics/dimensions/anomalies), then recommendations. Never invent data that is not in the result; say so plainly when evidence is thin.`
+	}
+	return `你是资深数据分析师。基于给定的 SQL 与查询结果，用中文 Markdown 输出：先给结论，再给关键证据（指标/维度/异常点），最后给建议。严禁编造结果中不存在的数据；数据不足时如实说明。`
+}
+
+func chartSystemPrompt(lang string) string {
+	if isEnglish(lang) {
+		return `You are a senior BI visualisation expert. Output exactly one JSON object — no prose, no code fences.`
+	}
+	return `你是资深 BI 可视化专家。只输出一个 JSON 对象，不要任何解释文字，也不要代码块围栏。`
+}
+
+func sqlExplainSystemPrompt(lang string) string {
+	if isEnglish(lang) {
+		return `You are a senior SQL engineer. Explain or improve the given SQL in Markdown in the user's language: start with one sentence, then list the key points; when you provide a rewritten SQL wrap it in a ` + "```sql" + ` fence. Never invent table structures or columns; state clearly when uncertain.`
+	}
+	return `你是资深 SQL 工程师。用中文 Markdown 面向用户说明或优化给定的 SQL：` +
 		`先给一句话结论，再逐条列出要点；如需给出改写后的 SQL，请放在 ` + "```sql" + ` 代码块中。` +
 		`不要杜撰表结构或字段，无法确定的地方要明确说明。`
-)
+}
 
 // sqlExplainExecutor explains, optimises or completes a SQL statement. It only
 // authors text — the statement is never executed here, so the skill is a safe
@@ -108,7 +134,7 @@ func sqlExplainExecutor(s *Service) registry.SkillExecutor {
 		prompt := fmt.Sprintf("任务：%s\n原始 SQL：\n```sql\n%s\n```\n\n"+
 			`只返回 JSON：{"summary":"一句话结论","points":["要点"],"optimized_sql":"改写后的 SQL 或空字符串","index_hints":["索引建议"]}`,
 			goals[mode], args.SQL)
-		content, tokens, err := s.complete(ctx, in.UserID, sqlExplainSystemPrompt, prompt)
+		content, tokens, err := s.complete(ctx, in.UserID, sqlExplainSystemPrompt(in.Context.Language), prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +209,7 @@ func nl2SQLExecutor(s *Service) registry.SkillExecutor {
 		prompt := fmt.Sprintf("数据集 schema（紧凑文本）：\n%s\n\n目标方言：%s\n用户问题：%s\n\n"+
 			`请生成一条只读 SELECT，只返回 JSON：{"sql":"...","confidence":0.0到1.0的小数,"missing":["仍需澄清的信息"],"explanation":"一句话口径说明"}`,
 			schema, dialect, args.Question)
-		content, tokens, err := s.complete(ctx, in.UserID, nl2sqlSystemPrompt, prompt)
+		content, tokens, err := s.complete(ctx, in.UserID, nl2sqlSystemPrompt(in.Context.Language), prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +255,7 @@ func insightExecutor(s *Service) registry.SkillExecutor {
 		prompt := fmt.Sprintf("数据集 schema：\n%s\n\n分析口径：%s\n\n"+
 			`请生成一条只读 SELECT（务必带 LIMIT），只返回 JSON：{"sql":"...","confidence":0.0到1.0的小数,"explanation":"..."}`,
 			schema, string(spec))
-		content, tokens, err := s.complete(ctx, in.UserID, nl2sqlSystemPrompt, prompt)
+		content, tokens, err := s.complete(ctx, in.UserID, nl2sqlSystemPrompt(in.Context.Language), prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -252,19 +278,37 @@ func insightExecutor(s *Service) registry.SkillExecutor {
 		}
 
 		sample, _ := json.Marshal(s.sampleRows(tr.Output))
-		md, t2, err := s.complete(ctx, in.UserID, insightSystemPrompt,
+		md, t2, err := s.complete(ctx, in.UserID, insightSystemPrompt(in.Context.Language),
 			fmt.Sprintf("分析目标：%s\nSQL：%s\n查询结果（JSON）：\n%s", args.Question, sql, string(sample)))
 		if err != nil {
 			return nil, err
 		}
+
+		// Auto-persist the recommendation as a real chart whenever write tools
+		// are enabled. The write confirmation gate still applies — if that is
+		// required the executor degrades gracefully and leaves the artifact
+		// for the user to save from the UI.
+		artifacts := map[string]any{
+			"sql":        sql,
+			"chart_spec": chartSpecFromInsight(args.DatasetID, args.Question, args.Metrics, args.Groupby),
+		}
+		output := map[string]any{"sql": sql, "result": tr.Output}
+		if rt.InvokeTool != nil && s.AgentWriteEnabled() {
+			if chartID, writeErr := s.autoCreateChartFromArtifacts(ctx, rt, artifacts); writeErr == nil {
+				output["chart_id"] = chartID
+				artifacts["chart_id"] = chartID
+				artifacts["chart_auto_created"] = true
+			} else if errors.Is(writeErr, ErrWriteConfirmRequired) {
+				// Confirmation pending — the artifact is still there for the UI path.
+			} else if s.Log != nil {
+				s.Log.Warn("auto chart creation skipped", zap.Error(writeErr))
+			}
+		}
+
 		return &registry.Result{
-			Output:   map[string]any{"sql": sql, "result": tr.Output},
-			Markdown: md,
-			Artifacts: map[string]any{
-				"sql": sql,
-				// chart_spec powers the frontend "保存为图表" closed loop.
-				"chart_spec": chartSpecFromInsight(args.DatasetID, args.Question, args.Metrics, args.Groupby),
-			},
+			Output:     output,
+			Markdown:   md,
+			Artifacts:  artifacts,
 			TokenUsage: tokens + t2,
 		}, nil
 	}
@@ -410,7 +454,7 @@ func chartDesignExecutor(s *Service) registry.SkillExecutor {
 			"程序预排的候选（按数据形态打分，权威排序）：%s\n\n"+
 			`请从候选中确认或微调推荐，只返回 JSON：{"vizType":"...","metrics":[...],"groupby":[...],"reason":"...","alternatives":[{"vizType":"...","reason":"..."}]}`,
 			schema, string(fields), args.Intent, string(heurJSON))
-		content, tokens, err := s.complete(ctx, in.UserID, chartSystemPrompt, prompt)
+		content, tokens, err := s.complete(ctx, in.UserID, chartSystemPrompt(in.Context.Language), prompt)
 		if err != nil {
 			return nil, err
 		}

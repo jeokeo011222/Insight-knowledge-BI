@@ -31,6 +31,7 @@ import type {
 } from '../../api/types';
 import PageHeader from '../../components/common/PageHeader';
 import ChartPreview from '../../components/charts/ChartPreview';
+import { SkeletonChart } from '../../components/common/Skeleton';
 import { usePermission } from '../../store';
 import { useI18n } from '../../i18n';
 import ExploreControls from './ExploreControls';
@@ -490,7 +491,9 @@ export default function Explore() {
             title={t('explore.result_preview')}
             className="zg-card chart-preview"
             extra={
-              result ? (
+              running ? (
+                <span className="cell-muted">{t('common.state.loading')}</span>
+              ) : result ? (
                 <span className="cell-muted">
                   {result.rowcount} rows · {result.colnames?.length ?? 0} cols
                 </span>
@@ -501,7 +504,13 @@ export default function Explore() {
               <Alert type="error" showIcon message={t('explore.query_failed')} description={queryError} />
             ) : null}
 
-            {!queryError && !result ? (
+            {!queryError && running && !result ? (
+              <div style={{ padding: 8 }}>
+                <SkeletonChart height={360} />
+              </div>
+            ) : null}
+
+            {!queryError && !running && !result ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={t('explore.run_first')}

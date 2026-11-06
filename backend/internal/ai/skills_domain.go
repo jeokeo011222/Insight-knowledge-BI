@@ -189,7 +189,7 @@ func (s *Service) authorSQL(ctx context.Context, userID int, rt *registry.ToolRu
 	prompt := fmt.Sprintf("数据集 schema（紧凑文本）：\n%s\n\n分析目标：%s\n\n"+
 		`请生成一条只读 SELECT（务必带 LIMIT），只返回 JSON：{"sql":"...","confidence":0.0到1.0的小数,"explanation":"一句话口径说明"}`,
 		schema, goal)
-	content, tokens, err := s.complete(ctx, userID, nl2sqlSystemPrompt, prompt)
+	content, tokens, err := s.complete(ctx, userID, nl2sqlSystemPrompt(""), prompt)
 	if err != nil {
 		return nil, 0, err
 	}

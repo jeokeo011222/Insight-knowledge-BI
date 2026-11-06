@@ -56,6 +56,47 @@ type Service struct {
 	plugins *pluginState
 }
 
+// AgentWriteEnabled reports whether write tools (chart_writer, dashboard_writer)
+// are globally enabled for this Service instance. Individual agents and runs
+// can further gate writes via their own scope; this is the coarse on/off switch.
+func (s *Service) AgentWriteEnabled() bool {
+	if s == nil || s.Config == nil {
+		return false
+	}
+	return s.Config.AIWriteToolsEnabled
+}
+
+// autoCreateChartFromArtifacts inspects the artifacts map for a chart_spec
+// produced by insight/chart_design and persists it via chart_writer. Returns
+// the newly created chart ID, or an error (callers decide whether to retry,
+// degrade, or surface).
+func (s *Service) autoCreateChartFromArtifacts(ctx context.Context, rt *registry.ToolRuntime, artifacts map[string]any) (int, error) {
+	specRaw, ok := artifacts["chart_spec"]
+	if !ok || specRaw == nil {
+		return 0, errors.New("no chart_spec artifact to materialise")
+	}
+	payload, err := json.Marshal(specRaw)
+	if err != nil {
+		return 0, fmt.Errorf("chart_spec marshal: %w", err)
+	}
+	args, _ := json.Marshal(map[string]any{"payload": json.RawMessage(payload)})
+	res, err := rt.InvokeTool(ctx, "chart_writer", args)
+	if err != nil {
+		return 0, err
+	}
+	// chart_writer returns {id: N} in its output payload, and may also set
+	// TargetIDs on the result directly (which is even easier to read).
+	if len(res.TargetIDs) > 0 {
+		return res.TargetIDs[0], nil
+	}
+	if out, ok := res.Output.(map[string]any); ok {
+		if id, ok := out["id"].(float64); ok {
+			return int(id), nil
+		}
+	}
+	return 0, errors.New("chart_writer did not return an id")
+}
+
 // NewService builds the AI plane and registers the built-in capabilities.
 func NewService(cfg *config.Config, log *zap.Logger, db *gorm.DB, c *cache.Client, mgr *security.Manager) *Service {
 	s := &Service{

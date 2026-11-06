@@ -28,6 +28,9 @@ type ProviderConfig struct {
 	Model        string
 	APIKey       string
 	TimeoutSec   int
+	// FastModel is the cheaper/faster model for simple read-only questions.
+	// Empty = fall back to Model (no tier splitting).
+	FastModel string
 }
 
 // providerConfigOf maps a stored provider row onto the gateway's config view.

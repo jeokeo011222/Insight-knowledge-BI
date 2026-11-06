@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	"superset/internal/ai"
 	"superset/internal/api"
 	"superset/internal/config"
 	"superset/internal/datasets"
@@ -160,6 +161,7 @@ func runCmd() *cobra.Command {
 				return err
 			}
 			srv := server.New(log)
+			api.SetMetaDBLogger(log)
 			// Routes are registered by the api package first so that the
 			// authentication middleware can be attached before any route.
 			if err := api.RegisterAll(srv, cfg, log, tr, db); err != nil {
@@ -239,6 +241,23 @@ func beatCmd() *cobra.Command {
 			}()
 
 			log.Info("beat scheduler started")
+
+			// Pulse (指标主动洞察) 订阅调度：异步挂起不阻塞主 beat.
+			var aiSvc *ai.Service
+			if cacheClient != nil {
+				manager := security.NewManager(db, log)
+				aiSvc = ai.NewService(cfg, log, db, cacheClient, manager)
+			} else {
+				log.Warn("redis/cache unavailable, Pulse scheduler disabled")
+			}
+			if aiSvc != nil {
+				go func() {
+					if err := aiSvc.RunPulseScheduler(ctx); err != nil {
+						log.Error("pulse scheduler stopped", zap.Error(err))
+					}
+				}()
+			}
+
 			return reports.RunScheduler(ctx, cfg, log, db)
 		},
 	}

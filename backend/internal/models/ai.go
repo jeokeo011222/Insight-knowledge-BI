@@ -243,6 +243,57 @@ type AIMetric struct {
 // TableName returns the original table name.
 func (AIMetric) TableName() string { return "ai_metric" }
 
+// AIMetricSubscription is a Pulse-style主动洞察订阅: 一个已审核指标 + 一个投递通道 + 一个检测规则.
+// scheduler (reports beat) 定期触发 executor 取最新值, 运行异常检测, 并用 LLM 把结论写成
+// 自然语言摘要发到 Slack/邮件/Webhook.
+type AIMetricSubscription struct {
+	BaseModel
+	MetricID   int    `gorm:"column:metric_id;index;not null" json:"metric_id"`
+	MetricName string `gorm:"-" json:"metric_name,omitempty"` // resolved lazily
+
+	// Trigger
+	Frequency string `gorm:"column:frequency;size:16;default:daily" json:"frequency"` // hourly|daily|weekly|custom
+	Crontab   string `gorm:"column:crontab;size:64" json:"crontab"`                  // optional override
+	Timezone  string `gorm:"column:timezone;size:64;default:UTC" json:"timezone"`
+
+	// Delivery
+	Channel     string `gorm:"column:channel;size:16;not null" json:"channel"`                      // slack|email|webhook
+	Target      string `gorm:"column:target;size:512;not null" json:"target"`                        // webhook url, email address
+	ChannelConf string `gorm:"column:channel_conf;type:json" json:"channel_conf,omitempty"`          // per-channel extras (e.g. slack thread)
+
+	// Detection rule — threshold (abs) or z-score (stddev over lookback)
+	RuleType   string  `gorm:"column:rule_type;size:16;default:threshold" json:"rule_type"`          // threshold|zscore|yoy
+	RuleValue  float64 `gorm:"column:rule_value;default:0" json:"rule_value"`                        // abs diff for threshold, σ for zscore, pct for yoy
+	Lookback   int     `gorm:"column:lookback;default:7" json:"lookback"`                            // days of history for zscore
+
+	// Control
+	Active      bool   `gorm:"column:active;default:true;index" json:"active"`
+	OwnerID     int    `gorm:"column:owner_id;index" json:"owner_id"`
+	LastRunAt   *time.Time `gorm:"column:last_run_at" json:"last_run_at,omitempty"`
+	LastRunOK   *bool       `gorm:"column:last_run_ok" json:"last_run_ok,omitempty"`
+	LastRunNote string     `gorm:"column:last_run_note;type:text" json:"last_run_note,omitempty"`
+}
+
+// TableName returns the original table name.
+func (AIMetricSubscription) TableName() string { return "ai_metric_subscription" }
+
+// AIMetricEvent is one emitted Pulse record — keeps the last N events per sub so
+// the operator can page recent insights without digging through the audit log.
+type AIMetricEvent struct {
+	BaseModel
+	SubscriptionID int    `gorm:"column:subscription_id;index;not null" json:"subscription_id"`
+	MetricID       int    `gorm:"column:metric_id;index" json:"metric_id"`
+	Anomaly        bool   `gorm:"column:anomaly;default:false" json:"anomaly"`
+	Value          float64 `gorm:"column:value" json:"value"`
+	Expected       *float64 `gorm:"column:expected" json:"expected,omitempty"`
+	DeltaPct       *float64 `gorm:"column:delta_pct" json:"delta_pct,omitempty"`
+	Summary        string `gorm:"column:summary;type:text" json:"summary,omitempty"`
+	Delivered      bool   `gorm:"column:delivered;default:false" json:"delivered"`
+}
+
+// TableName returns the original table name.
+func (AIMetricEvent) TableName() string { return "ai_metric_event" }
+
 // AISQLMemory is one confirmed natural-language → SQL example (NL→SQL 范例记忆).
 //
 // It is the cheapest accuracy lever in the whole Agent plane: a repeated

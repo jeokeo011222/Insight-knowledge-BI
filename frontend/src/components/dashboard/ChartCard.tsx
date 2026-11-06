@@ -13,6 +13,7 @@ import { client, endpoints, errorMessage } from '../../api/client';
 import type { ChartDataResponse, DashboardChart, QueryResultItem } from '../../api/types';
 import ChartPreview from '../charts/ChartPreview';
 import Loading from '../common/Loading';
+import { SkeletonChart } from '../common/Skeleton';
 import AgentPanel from '../ai/AgentPanel';
 import { useI18n } from '../../i18n';
 import {
@@ -307,7 +308,11 @@ export default function ChartCard({
         className={`chart-card__body${clickable ? ' chart-card__body--linked' : ''}`}
         style={{ height: height - 44 - barHeight }}
       >
-        {loading && !result ? <Loading height={previewHeight} tip={t('common.state.loading_chart')} /> : null}
+        {loading && !result ? (
+          <div style={{ padding: 12, height: previewHeight, boxSizing: 'border-box' }}>
+            <SkeletonChart height={Math.max(80, previewHeight - 80)} />
+          </div>
+        ) : null}
         {!loading && error ? <div className="chart-card__error">{error}</div> : null}
         {error && loading ? <div className="chart-card__error">{error}</div> : null}
         {!error && result ? (

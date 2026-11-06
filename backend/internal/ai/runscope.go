@@ -1,6 +1,9 @@
 package ai
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // runScope is the resolved agent policy for a single run. It is attached to the
 // run's context so capability gates (which skills/tools an agent may use, and
@@ -15,6 +18,10 @@ type runScope struct {
 	// Provider is the resolved endpoint for this run, reused by skill helper
 	// calls so they hit the same model the agent is bound to.
 	Provider *ProviderConfig
+	// Tier selects the cheaper/faster model when the question looks trivial.
+	// "fast" = simple reads (single metric, top-N, rank, yoy); "default" = full
+	// analysis (attribution, trend decomposition, writes).
+	Tier string
 
 	WriteToolsEnabled    bool
 	WriteConfirmRequired bool
@@ -69,4 +76,42 @@ func writeToolsAllowed(ctx context.Context) bool {
 func writeConfirmRequired(ctx context.Context) bool {
 	sc := runScopeFrom(ctx)
 	return sc != nil && sc.WriteConfirmRequired
+}
+
+// routeIntent picks "fast" or "default" based on the natural-language question.
+// It is intentionally cheap (no LLM call) so it does not add latency. A keyword
+// match for analysis-heavy intents (attribution, trend, structure) forces the
+// expensive model; otherwise single-metric reads stay on the cheap tier when a
+// FastModel is configured.
+func routeIntent(question string, writeEnabled bool) string {
+	if writeEnabled {
+		return "default" // writes always use the full model — correctness > cost.
+	}
+	q := strings.ToLower(question)
+	for _, kw := range []string{
+		"归因", "驱动", "拆解", "结构", "dupont", "structure", "attribution",
+		"趋势", "拐点", "波动", "trend", "decomposition",
+		"异常", "anomaly", "outlier",
+		"为什么", "why", "root cause",
+		"对比", "对比分析", "compare",
+	} {
+		if strings.Contains(q, kw) {
+			return "default"
+		}
+	}
+	// Single-metric / rank / yoy reads are the happy path for fast models.
+	return "fast"
+}
+
+// pickProviderModel returns either the default or the fast model, depending on
+// the scope tier and whether a FastModel is configured. Falls back to pc.Model
+// in all "no tier splitting" cases.
+func pickProviderModel(pc *ProviderConfig, tier string) string {
+	if pc == nil {
+		return ""
+	}
+	if tier == "fast" && pc.FastModel != "" {
+		return pc.FastModel
+	}
+	return pc.Model
 }

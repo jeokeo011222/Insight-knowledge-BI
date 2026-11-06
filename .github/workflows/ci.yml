@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'superset-go/backend/go.mod'
+      - name: Build
+        run: cd superset-go/backend && go build ./...
+      - name: Vet
+        run: cd superset-go/backend && go vet ./...
+      - name: Test
+        run: cd superset-go/backend && go test ./... -count=1
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: superset-go/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: superset-go/frontend/package-lock.json
+      - run: npm ci
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+  evals-dry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: NL2SQL eval (dry-run structure check only, no LLM calls)
+        run: python superset-go/docs/eval_nl2sql.py --dry
+
+  evals-live:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    needs: [backend, evals-dry]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'superset-go/backend/go.mod'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Start server
+        run: |
+          cd superset-go/backend
+          go build -o bin/superset ./cmd/superset
+          ./bin/superset serve &
+          sleep 15
+      - name: Run evals (nightly, live against server)
+        env:
+          EVAL_BASE_URL: ${{ secrets.EVAL_BASE_URL }}
+          EVAL_API_KEY: ${{ secrets.EVAL_API_KEY }}
+        run: python superset-go/docs/eval_nl2sql.py --live --repeats 2

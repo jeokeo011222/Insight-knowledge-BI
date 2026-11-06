@@ -89,7 +89,8 @@ export default function LineageDrawer({ open, type, id, name, onClose }: Lineage
       title={t('lineage.title')}
       open={open}
       onClose={onClose}
-      width={460}
+      width={420}
+      className="zg-agent-drawer"
       destroyOnClose
     >
       <Space direction="vertical" size={2} style={{ marginBottom: 16 }}>

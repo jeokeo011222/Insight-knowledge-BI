@@ -35,6 +35,7 @@ import PageHeader from '../../components/common/PageHeader';
 import FavoriteStar from '../../components/common/FavoriteStar';
 import EmptyState from '../../components/common/EmptyState';
 import Loading from '../../components/common/Loading';
+import { SkeletonBlock, SkeletonRows } from '../../components/common/Skeleton';
 import { usePermission } from '../../store';
 import { useI18n } from '../../i18n';
 import { formatDateTimeShort } from '../../utils/format';
@@ -313,7 +314,29 @@ export default function DashboardList() {
         }
       />
 
-      {loading ? <Loading height={200} /> : null}
+      {loading ? (
+        view === 'card' ? (
+          <div className="card-grid">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="zg-card" style={{ padding: 0, overflow: 'hidden' }}>
+                <SkeletonBlock w="100%" h={132} r={0} />
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <SkeletonBlock w="80%" h={14} r={3} />
+                  <SkeletonBlock w="55%" h={12} r={3} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="zg-card" style={{ padding: 16 }}>
+            <SkeletonRows rows={5} gap={14} cellGap={16} shapes={[
+              { w: 300, h: 15 },
+              { w: 120, h: 13 },
+              { w: 110, h: 13 },
+            ]} />
+          </div>
+        )
+      ) : null}
 
       {!loading && rows.length === 0 ? (
         <EmptyState

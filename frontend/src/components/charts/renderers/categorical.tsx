@@ -196,8 +196,8 @@ function hierarchyOption(ctx: VizContext, type: 'sunburst' | 'treemap'): ECharts
         nodeClick: false,
         breadcrumb: { show: false },
         itemStyle: { borderColor: MARK_BORDER_COLOR, borderWidth: 1, gapWidth: 1 },
-        upperLabel: { show: Boolean(categoricalDims(ctx)[1]), height: 18, fontSize: FONT_SIZE, color: '#ffffff' },
-        label: { fontSize: FONT_SIZE, color: '#ffffff' },
+        upperLabel: { show: Boolean(categoricalDims(ctx)[1]), height: 18, fontSize: FONT_SIZE, color: MARK_BORDER_COLOR },
+        label: { fontSize: FONT_SIZE, color: MARK_BORDER_COLOR },
         levels: [
           { itemStyle: { borderWidth: 2, gapWidth: 2 } },
           { itemStyle: { borderWidth: 1, gapWidth: 1 }, colorSaturation: [0.35, 0.55] },

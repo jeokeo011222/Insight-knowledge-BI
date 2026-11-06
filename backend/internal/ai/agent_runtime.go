@@ -120,6 +120,12 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 		return res
 	}
 
+	// Cost-tier routing: a cheap keyword classifier decides whether the run can
+	// use the faster/cheaper model (when one is configured on the provider).
+	// Simple single-metric reads take the fast lane; write operations and deep
+	// analysis stay on the default tier.
+	scope.Tier = routeIntent(in.Question, scope.WriteToolsEnabled)
+
 	runCtx := withRunScope(ctx, scope)
 	if timeout := r.timeout(agent); timeout > 0 {
 		var cancel context.CancelFunc
@@ -229,7 +235,10 @@ func (r *Runtime) execute(ctx context.Context, userID int, in RunInput) *RunResu
 		}
 		steps++
 
-		resp, err := s.LLM.Chat(runCtx, pc, &ChatRequest{Messages: msgs, Tools: tools, UserID: userID})
+		resp, err := s.LLM.Chat(runCtx, pc, &ChatRequest{
+			Messages: msgs, Tools: tools, UserID: userID,
+			Model: pickProviderModel(pc, scope.Tier),
+		})
 		if err != nil {
 			failure = err
 			break
@@ -823,6 +832,8 @@ func (r *Runtime) plan(ctx context.Context, pc *ProviderConfig, userID, runID in
 		// re-asking the same question (retry / regenerate) reuses the cached plan
 		// instead of paying for another model round-trip.
 		CacheKey: planCacheKey(scope, question, actx.Language),
+		// Planning always uses the default model — it is a short call and the
+		// fast tier does not materially reduce its cost.
 	})
 	if err != nil {
 		r.svc.Log.Debug("agent plan call failed, using fallback", zap.Error(err))

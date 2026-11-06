@@ -40,6 +40,9 @@ type ReadOnlyResult struct {
 	// itself downgraded to read-only. False means the guard was the only
 	// boundary (an engine without a session switch).
 	SessionReadOnly bool `json:"session_read_only"`
+	// Warnings lists post-execution sanity-check flags so the Agent can decide
+	// whether to re-plan (empty result, suspiciously wide projection, etc).
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // ExecuteReadOnlySQL runs a single caller-supplied read-only statement against
@@ -97,10 +100,18 @@ func (e *Executor) ExecuteReadOnlySQL(ctx context.Context, userID int, statement
 
 	// SQL quality gate: refuse plans that would scan an unbounded number of
 	// rows (the classic "forgot the join condition" query). It fails open —
-	// a guard that cannot explain must not block the query.
-	if e.ExplainMaxRows > 0 && isPostgresURI(database.SQLAlchemyURI) {
-		if gerr := e.explainGuard(ctx, runner, final, e.ExplainMaxRows); gerr != nil {
-			return nil, gerr
+	// a guard that cannot explain must not block the query. PG and MySQL are
+	// supported; other engines skip cleanly.
+	if e.ExplainMaxRows > 0 {
+		switch {
+		case isPostgresURI(database.SQLAlchemyURI):
+			if gerr := e.explainGuard(ctx, runner, final, e.ExplainMaxRows); gerr != nil {
+				return nil, gerr
+			}
+		case isMySQLURI(database.SQLAlchemyURI):
+			if gerr := e.explainGuardMySQL(ctx, runner, final, e.ExplainMaxRows); gerr != nil {
+				return nil, gerr
+			}
 		}
 	}
 
@@ -132,6 +143,8 @@ func (e *Executor) ExecuteReadOnlySQL(ctx context.Context, userID int, statement
 		e.Log.Warn("query audit write failed", zap.Error(rerr))
 	}
 
+	warnings := checkResultPlausibility(rows, raw.ColNames)
+
 	return &ReadOnlyResult{
 		SQL:             final,
 		Data:            rows,
@@ -143,7 +156,44 @@ func (e *Executor) ExecuteReadOnlySQL(ctx context.Context, userID int, statement
 		DurationMS:      int(end.Sub(start).Milliseconds()),
 		MaskedColumns:   masked,
 		SessionReadOnly: sessionReadOnly,
+		Warnings:        warnings,
 	}, nil
+}
+
+// checkResultPlausibility flags results that look suspicious so the Agent can
+// decide whether to try again with a different plan. It does not fail the
+// result — the caller still gets what the database returned, plus a hint.
+func checkResultPlausibility(rows []map[string]any, colNames []string) []string {
+	var warns []string
+	nRows := len(rows)
+	nCols := len(colNames)
+
+	if nRows == 0 {
+		warns = append(warns, "查询返回 0 行；可能时间范围过窄、筛选条件过严、或字段/值拼错，请检查 WHERE 子句")
+	}
+
+	if nCols > 80 {
+		warns = append(warns, fmt.Sprintf("SELECT 列数过多 (%d)，建议只取分析必需的列以减少 Token 消耗", nCols))
+	}
+
+	// Empty-value rate: only check when there are rows and columns to speak of.
+	if nRows > 0 && nCols > 0 && nRows <= 500 {
+		empty := 0
+		total := nRows * nCols
+		for _, row := range rows {
+			for _, col := range colNames {
+				if v, ok := row[col]; !ok || v == nil || v == "" {
+					empty++
+				}
+			}
+		}
+		rate := float64(empty) / float64(total)
+		if rate > 0.9 {
+			warns = append(warns, fmt.Sprintf("结果中 %.0f%% 的值为空，可能 JOIN 类型不匹配或聚合口径有问题", rate*100))
+		}
+	}
+
+	return warns
 }
 
 // maskResultRows applies the dataset's column masks unless the caller is exempt.
@@ -189,7 +239,15 @@ func sortStrings(values []string) {
 func isPostgresURI(uri string) bool {
 	u := strings.ToLower(uri)
 	return strings.HasPrefix(u, "postgres://") || strings.HasPrefix(u, "postgresql://") ||
-		strings.HasPrefix(u, "postgresql+psycopg2://")
+		strings.HasPrefix(u, "postgresql+psycopg2://") || strings.HasPrefix(u, "postgresql+asyncpg://")
+}
+
+// isMySQLURI reports whether the datasource speaks MySQL (covers mysql and
+// mariadb dialect strings; mysql+pymysql is the most common production form).
+func isMySQLURI(uri string) bool {
+	u := strings.ToLower(uri)
+	return strings.HasPrefix(u, "mysql://") || strings.HasPrefix(u, "mysql+") ||
+		strings.HasPrefix(u, "mariadb://")
 }
 
 // planNode is the subset of a Postgres EXPLAIN (FORMAT JSON) plan we inspect.
@@ -251,6 +309,64 @@ func worstSeqScan(n planNode) float64 {
 		}
 	}
 	return worst
+}
+
+// explainGuardMySQL runs EXPLAIN (tabular) and reads the `rows` column from the
+// result set. MySQL EXPLAIN always returns at least one row; rows=nil means
+// the optimizer could not estimate (subquery, UNION, etc) and we skip. When
+// no row exceeds maxRows the query proceeds; otherwise it is rejected with a
+// descriptive message.
+func (e *Executor) explainGuardMySQL(ctx context.Context, q sqlQuerier, stmt string, maxRows int) error {
+	qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rows, err := q.QueryContext(qctx, "EXPLAIN "+stmt)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	cols, _ := rows.Columns()
+	if len(cols) == 0 {
+		return nil
+	}
+	rowsIdx := -1
+	for i, c := range cols {
+		if strings.EqualFold(c, "rows") {
+			rowsIdx = i
+			break
+		}
+	}
+	if rowsIdx < 0 {
+		return nil
+	}
+
+	maxEst := float64(0)
+	for rows.Next() {
+		// Scan a row's values as raw pointers — EXPLAIN returns heterogeneous types.
+		ptrs := make([]any, len(cols))
+		vals := make([]any, len(cols))
+		for i := range ptrs {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil
+		}
+		if v, ok := vals[rowsIdx].(int64); ok && float64(v) > maxEst {
+			maxEst = float64(v)
+		} else if f, ok := vals[rowsIdx].(float64); ok && f > maxEst {
+			maxEst = f
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil
+	}
+	if maxEst > float64(maxRows) {
+		return apperrors.BadRequest(
+			"Query is estimated to scan about %d rows; add a filter or fix the join condition and retry",
+			int64(maxEst))
+	}
+	return nil
 }
 
 // wrapReadOnly enforces the row limit and applies row-level-security

@@ -1,4 +1,4 @@
-import { Space, Spin, Tag, Typography } from 'antd';
+import { Space, Tag, Typography } from 'antd';
 import { useI18n } from '../../i18n';
 import styles from './ai.module.css';
 
@@ -10,14 +10,25 @@ interface Props {
   stepCount: number;
 }
 
-/** Compact status line shown above the timeline while the Agent is running. */
+/** Three bouncing dots — a lightweight, dark-mode friendly typing indicator. */
+function TypingDots() {
+  return (
+    <span className="zg-typing" aria-hidden="true" data-testid="ai-typing">
+      <span className="zg-typing__dot" />
+      <span className="zg-typing__dot" />
+      <span className="zg-typing__dot" />
+    </span>
+  );
+}
+
+/** Status line shown above the answer bubble while the Agent is working. */
 export default function AiStreamingText({ streaming, aborted, stepCount }: Props) {
   const { t } = useI18n();
 
   if (streaming) {
     return (
       <Space size={8} className={styles.metaRow}>
-        <Spin size="small" />
+        <TypingDots />
         <Text>{t('ai.streaming.thinking')}</Text>
         {stepCount > 0 && <Tag>{t('ai.streaming.step', { count: stepCount })}</Tag>}
       </Space>

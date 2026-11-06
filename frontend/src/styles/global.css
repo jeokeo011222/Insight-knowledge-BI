@@ -1902,3 +1902,109 @@ a.welcome-list__row:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* =========================================================
+   Skeleton shimmer — used by <SkeletonBlock />, <SkeletonTable />, etc.
+   Ties to the theme's surface colour so dark mode skeletons look correct
+   without a separate media clause per renderer.
+   ========================================================= */
+
+.zg-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-card) 25%,
+    var(--color-bg-layout) 37%,
+    var(--color-bg-card) 63%
+  );
+  background-size: 400% 100%;
+  box-sizing: border-box;
+  opacity: 0.55;
+}
+
+.zg-shimmer {
+  animation: zg-shimmer-move 1.4s ease-in-out infinite;
+}
+
+@keyframes zg-shimmer-move {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0   50%; }
+}
+
+/* =========================================================
+   Typing indicator — three bouncing dots used by AiStreamingText
+   while the Agent is streaming its answer. Each dot bounces with a
+   staggered delay so the sequence reads as "typing".
+   ========================================================= */
+
+.zg-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.zg-typing__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  opacity: 0.7;
+  animation: zg-typing-bounce 1.2s infinite ease-in-out;
+}
+
+.zg-typing__dot:nth-child(1) { animation-delay: 0s; }
+.zg-typing__dot:nth-child(2) { animation-delay: 0.15s; }
+.zg-typing__dot:nth-child(3) { animation-delay: 0.30s; }
+
+@keyframes zg-typing-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.55; }
+  40%           { transform: translateY(-4px); opacity: 1; }
+}
+
+/* =========================================================
+   Unified responsive breakpoints.
+   576  = small  phones
+   768  = medium tablets
+   1024 = large  desktops
+   1280 = xl     wide
+   ========================================================= */
+
+/* -- Small: phones ≤ 576px. Drawer auto-collapses, charts stack vertically. */
+@media (max-width: 576px) {
+  .zg-page__content {
+    padding: 12px !important;
+  }
+
+  .zg-dashboard-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .zg-kpi-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .zg-chart-card__title {
+    font-size: 12px !important;
+  }
+
+  /* Agent Drawer goes full-bleed on small screens instead of 460px fixed. */
+  .zg-agent-drawer-mobile .ant-drawer-body {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+}
+
+/* -- Medium: tablets. Sidebar auto-collapse, KPI row 3-up, charts wider. */
+@media (max-width: 1024px) and (min-width: 577px) {
+  .zg-kpi-row {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* -- Large: desktops (≥ 1025px). Default layout, Drawer 420px max. */
+@media (min-width: 1025px) {
+  .zg-agent-drawer .ant-drawer-body {
+    max-width: 420px;
+  }
+}

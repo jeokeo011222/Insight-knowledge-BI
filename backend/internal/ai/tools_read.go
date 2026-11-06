@@ -118,6 +118,9 @@ func queryExecutor(s *Service) registry.ToolExecutor {
 		if !res.SessionReadOnly {
 			out["read_only_session"] = false
 		}
+		if len(res.Warnings) > 0 {
+			out["warnings"] = res.Warnings
+		}
 		return &registry.ToolResult{
 			Output:     out,
 			SideEffect: registry.Read,

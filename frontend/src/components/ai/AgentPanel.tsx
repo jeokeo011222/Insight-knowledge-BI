@@ -626,7 +626,8 @@ export default function AgentPanel({
   const drawer = (
     <Drawer
       open={ai.drawerOpen}
-      width={narrow ? '100%' : 460}
+      width={narrow ? '100%' : 420}
+      className={narrow ? 'zg-agent-drawer-mobile' : 'zg-agent-drawer'}
       onClose={() => dispatch(setDrawerOpen(false))}
       title={
         <Space size={6} align="center" wrap>

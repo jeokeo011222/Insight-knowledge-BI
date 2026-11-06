@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 
@@ -18,6 +20,41 @@ import (
 	"superset/internal/security"
 	"superset/internal/server"
 )
+
+// metaDBLogger is set once by the main bootstrap so classifyListDBError can
+// emit a real operator log while keeping the client message generic.
+var metaDBLogger *zap.Logger
+
+// SetMetaDBLogger wires the operator log into this package.
+func SetMetaDBLogger(log *zap.Logger) { metaDBLogger = log }
+
+// classifyListDBError maps a metadata-database error (GORM Count/Find on the
+// system tables) onto a stable, generic client-facing message. The raw driver
+// text is kept out of the response body; operators see it in the log.
+func classifyListDBError(err error, op string) *apperrors.AppError {
+	if err == nil {
+		return nil
+	}
+	if metaDBLogger != nil {
+		metaDBLogger.Error("meta db error on "+op, zap.Error(err))
+	}
+	lower := strings.ToLower(err.Error())
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return apperrors.NotFound("Resource not found")
+	case strings.Contains(lower, "does not exist"),
+		strings.Contains(lower, "unknown column"),
+		strings.Contains(lower, "no such column"):
+		return apperrors.Internal("The data model is out of sync — try restarting the service")
+	case strings.Contains(lower, "connection refused"),
+		strings.Contains(lower, "failed to connect"),
+		strings.Contains(lower, "could not connect"),
+		strings.Contains(lower, "timeout"),
+		strings.Contains(lower, "timed out"):
+		return apperrors.ServiceUnavailable("The metadata database is temporarily unavailable")
+	}
+	return apperrors.Internal("A database error occurred while processing your request")
+}
 
 // listParams captures the FAB-style list query string.
 type listParams struct {
@@ -200,7 +237,7 @@ func orderClause(p listParams, allowed map[string]string, fallback string) strin
 func listResultW[T any](w http.ResponseWriter, r *http.Request, db *gorm.DB, p listParams, order string, shaper func(*T) any) {
 	var total int64
 	if err := db.Count(&total).Error; err != nil {
-		server.WriteError(w, apperrors.Internal("Database error: %s", err.Error()))
+		server.WriteError(w, classifyListDBError(err, "count"))
 		return
 	}
 	var rows []T
@@ -213,7 +250,7 @@ func listResultW[T any](w http.ResponseWriter, r *http.Request, db *gorm.DB, p l
 		q = q.Offset((p.Page - 1) * p.Size).Limit(p.Size)
 	}
 	if err := q.Find(&rows).Error; err != nil {
-		server.WriteError(w, apperrors.Internal("Database error: %s", err.Error()))
+		server.WriteError(w, classifyListDBError(err, "find"))
 		return
 	}
 	out := make([]any, 0, len(rows))
