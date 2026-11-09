@@ -78,6 +78,14 @@ func RegisterSemantic(r chi.Router, deps *Deps) {
 			Delete("/model/{id}", a.deleteModel)
 		sr.With(security.RequirePermission(security.ActionWrite, security.ResSemanticLayer)).
 			Post("/model/{id}/publish", a.publishModel)
+		// Certification API — POST /model/{id}/certify {"certified":true|false}
+		// signs off (or retracts) a model and every field/relationship under it.
+		sr.With(security.RequirePermission(security.ActionWrite, security.ResSemanticLayer)).
+			Post("/model/{id}/certify", a.certifyModel)
+		sr.With(security.RequirePermission(security.ActionWrite, security.ResSemanticLayer)).
+			Post("/field/{id}/certify", a.certifyField)
+		sr.With(security.RequirePermission(security.ActionWrite, security.ResSemanticLayer)).
+			Post("/relationship/{id}/certify", a.certifyRelationship)
 		sr.With(security.RequirePermission(security.ActionWrite, security.ResSemanticLayer)).
 			Post("/model/{id}/relationships", a.createRelationship)
 		sr.With(security.RequirePermission(security.ActionWrite, security.ResSemanticLayer)).
@@ -227,6 +235,88 @@ func (a *semanticAPI) publishModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeResult(w, view)
+}
+
+// --- Certification handlers ---------------------------------------------------
+
+// certifyModel signs off (or retracts) a model + every field/relationship.
+// Request body: {"certified": true} or {"certified": false}.
+func (a *semanticAPI) certifyModel(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var body struct {
+		Certified bool `json:"certified"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, apperrors.BadRequest("请求体格式错误：%s", err.Error()))
+		return
+	}
+	var model any
+	if body.Certified {
+		model, err = a.svc.CertifyModel(r.Context(), id)
+	} else {
+		model, err = a.svc.DecertifyModel(r.Context(), id)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeResult(w, model)
+}
+
+func (a *semanticAPI) certifyField(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var body struct {
+		Certified bool `json:"certified"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, apperrors.BadRequest("请求体格式错误：%s", err.Error()))
+		return
+	}
+	var field any
+	if body.Certified {
+		field, err = a.svc.CertifyField(r.Context(), id)
+	} else {
+		field, err = a.svc.DecertifyField(r.Context(), id)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeResult(w, field)
+}
+
+func (a *semanticAPI) certifyRelationship(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var body struct {
+		Certified bool `json:"certified"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, apperrors.BadRequest("请求体格式错误：%s", err.Error()))
+		return
+	}
+	var rel any
+	if body.Certified {
+		rel, err = a.svc.CertifyRelationship(r.Context(), id)
+	} else {
+		rel, err = a.svc.DecertifyRelationship(r.Context(), id)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeResult(w, rel)
 }
 
 func (a *semanticAPI) createRelationship(w http.ResponseWriter, r *http.Request) {

@@ -46,6 +46,13 @@ type SemanticModel struct {
 	// PublishedOn is set the first time status flips to published, so "how long
 	// has this been drifting" has an answer.
 	PublishedOn *time.Time `gorm:"column:published_on" json:"published_on"`
+	// CertifiedAt is the wall-clock time an operator explicitly signed off
+	// that this model's terminology, descriptions and relationships are
+	// trustworthy. The Agent surface labels certified rows with ✅ so the
+	// answer shows the operator has reviewed it, vs. draft rows which say
+	// "AI 生成 · 未认证". Auto-generated models start as nil; the operator
+	// either certifies them after review or leaves them draft.
+	CertifiedAt *time.Time `gorm:"column:certified_at" json:"certified_at"`
 }
 
 // TableName returns the table name.
@@ -86,6 +93,11 @@ type SemanticField struct {
 	SortOrder  int    `gorm:"column:sort_order;not null;default:0" json:"sort_order"`
 	IsDttm     bool   `gorm:"column:is_dttm;not null;default:false" json:"is_dttm"`
 	DefaultAgg string `gorm:"column:default_agg;size:16" json:"default_agg"`
+	// CertifiedAt mirrors SemanticModel.CertifiedAt at the field level. When
+	// the UI shows a field the Agent cited, a non-nil CertifiedAt means
+	// "operator reviewed this specific expression/description". Nil on a
+	// metric field created by ontogen.go means "AI 生成 · 未认证".
+	CertifiedAt *time.Time `gorm:"column:certified_at" json:"certified_at"`
 }
 
 // TableName returns the table name.
@@ -108,6 +120,9 @@ type SemanticRelationship struct {
 	ToModelID   int    `gorm:"column:to_model_id;not null;index" json:"to_model_id"`
 	JoinType    string `gorm:"column:join_type;size:16;not null;default:many_to_one" json:"join_type"`
 	Condition   string `gorm:"column:condition;type:text;not null" json:"condition"`
+	// CertifiedAt: auto-inferred joins from ontogen.go start nil; the operator
+	// certifies them after confirming the bridge columns match production data.
+	CertifiedAt *time.Time `gorm:"column:certified_at" json:"certified_at"`
 }
 
 // TableName returns the table name.
