@@ -119,6 +119,13 @@ func (p *planner) systemPrompt(actx registry.AIContext, scope *runScope, questio
 	if digest := p.svc.semanticModelDigest(context.Background(), actxDatasetID(actx)); digest != "" {
 		b.WriteString(digest)
 	}
+	// 语义治理摘要（Certification 状态机）：告诉模型多少字段是已认证的，
+	// 多少是草稿。全认证 → 可直接引用；有草稿 → 答完要加限定；全草稿 → 标注
+	// 「口径由 AI 生成」。这是 Auto Ontology 的 Certify 阶段在 prompt 里的落点。
+	if gov := p.svc.certificationPrompt(context.Background(), actxDatasetID(actx), actx.Language); gov != "" {
+		b.WriteString("\n")
+		b.WriteString(gov)
+	}
 	return b.String()
 }
 

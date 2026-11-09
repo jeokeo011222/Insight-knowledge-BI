@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -24,6 +25,7 @@ import (
 	"superset/internal/pkg/logger"
 	"superset/internal/reports"
 	"superset/internal/security"
+	"superset/internal/semantic"
 	"superset/internal/server"
 	"superset/internal/workers"
 
@@ -256,10 +258,58 @@ func beatCmd() *cobra.Command {
 						log.Error("pulse scheduler stopped", zap.Error(err))
 					}
 				}()
+				// Agent SQL → 语义层反哺闭环（Auto Ontology Learn 阶段）：
+				// 每隔 12h 扫最近 7 天已采纳的 Agent SQL，相同表达式出现 ≥ 3 次
+				// 则自动生成 draft SemanticField。操作员审核后认证，口径就从
+				// "AI 生成草稿" 升级为 "已认证"，Agent 下次同题就复用这个口径。
+				go runAutoAdoptLoop(ctx, db, log)
 			}
 
 			return reports.RunScheduler(ctx, cfg, log, db)
 		},
+	}
+}
+
+func runAutoAdoptLoop(ctx context.Context, db *gorm.DB, log *zap.Logger) {
+	// 每 12h 跑一次，扫最近 7 天的 Agent SQL。相同表达式出现 ≥ 3 次即自动
+	// 生成 draft SemanticField。这是 Auto Ontology Learn 阶段在 beat 里的落点。
+	const interval = 12 * time.Hour
+	const scanDays = 7
+	const minCount = 3
+
+	log.Info("auto-adopt loop started",
+		zap.Duration("interval", interval),
+		zap.Int("scan_days", scanDays),
+		zap.Int("min_count", minCount))
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// 启动时先跑一次（等待 30s 让 beat 完全起来）。
+	time.Sleep(30 * time.Second)
+	adoptOnce(ctx, db, log, scanDays, minCount)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("auto-adopt loop stopped (context cancelled)")
+			return
+		case <-ticker.C:
+			adoptOnce(ctx, db, log, scanDays, minCount)
+		}
+	}
+}
+
+func adoptOnce(ctx context.Context, db *gorm.DB, log *zap.Logger, days, minCount int) {
+	svc := semantic.New(db, log)
+	adopted, err := svc.BatchAdoptFromRecent(ctx, days, minCount, nil)
+	if err != nil {
+		log.Warn("auto-adopt batch failed", zap.Error(err))
+		return
+	}
+	if adopted > 0 {
+		log.Info("auto-adopt created draft metrics",
+			zap.Int("count", adopted), zap.Int("scan_days", days), zap.Int("min_count", minCount))
 	}
 }
 

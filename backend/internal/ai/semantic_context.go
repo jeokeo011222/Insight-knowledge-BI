@@ -67,3 +67,84 @@ func (s *Service) semanticRulesPrompt(ctx context.Context, datasetID int, questi
 	}
 	return text
 }
+
+// certificationPrompt appends a one-line governance summary to the system
+// prompt — "3/12 指标已认证" vs. "全部字段为草稿". The Agent uses this to
+// decide whether to qualify its answer with 「口径未认证，仅供参考」.
+//
+// CertifiedAt is an operator-visible timestamp (see semantic/certification.go).
+// When every field is certified, the model can assert metrics with confidence;
+// when some or most are draft, we tell it to flag the gap. The summary is
+// intentionally one line — we don't want certification noise pushing out
+// actual schema or rules.
+func (s *Service) certificationPrompt(ctx context.Context, datasetID int, lang string) string {
+	if datasetID <= 0 || s.DB == nil {
+		return ""
+	}
+	var m models.SemanticModel
+	if err := s.DB.WithContext(ctx).
+		Where("dataset_id = ? AND deleted = ?", datasetID, false).
+		Order("case when status = 'published' then 0 else 1 end, id").
+		First(&m).Error; err != nil {
+		return ""
+	}
+	var fields []models.SemanticField
+	if err := s.DB.WithContext(ctx).
+		Where("model_id = ? AND deleted = ?", m.ID, false).Find(&fields).Error; err != nil {
+		return ""
+	}
+	if len(fields) == 0 {
+		return ""
+	}
+	var certMetrics, certOther, uncert int
+	for _, f := range fields {
+		if f.CertifiedAt != nil {
+			if f.Kind == "metric" {
+				certMetrics++
+			} else {
+				certOther++
+			}
+		} else {
+			uncert++
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("\n")
+	if strings.EqualFold(lang, "en") {
+		b.WriteString("## Semantic governance summary\n")
+		fmt.Fprintf(&b, "Dataset %d: ", datasetID)
+		if m.CertifiedAt != nil {
+			fmt.Fprintf(&b, "model certified ✅ (%s) ", m.CertifiedAt.Format("2006-01-02"))
+		} else {
+			b.WriteString("model DRAFT ")
+		}
+		fmt.Fprintf(&b, "| certified metrics: %d | certified other: %d | uncertified fields: %d\n",
+			certMetrics, certOther, uncert)
+		if certMetrics == 0 {
+			b.WriteString("⚠️  No metric is certified. If you use a metric in your answer, say it is AI-generated and ask the user to confirm the definition.\n")
+		} else if uncert > 0 {
+			b.WriteString("Some fields are uncertified. Qualify answers that depend on them — e.g. 'this dimension is machine-inferred and has not been reviewed'.\n")
+		} else {
+			b.WriteString("All fields are certified — you may state metrics with confidence.\n")
+		}
+	} else {
+		b.WriteString("## 语义治理摘要\n")
+		fmt.Fprintf(&b, "数据集 %d：", datasetID)
+		if m.CertifiedAt != nil {
+			fmt.Fprintf(&b, "模型已认证 ✅（%s）", m.CertifiedAt.Format("2006-01-02"))
+		} else {
+			b.WriteString("模型为草稿")
+		}
+		fmt.Fprintf(&b, "｜已认证指标 %d｜已认证其他字段 %d｜未认证字段 %d\n",
+			certMetrics, certOther, uncert)
+		if certMetrics == 0 {
+			b.WriteString("⚠️ 当前没有指标被认证。回答时涉及指标请注明「口径由 AI 生成，仅供参考」，并建议用户到语义层认证后再使用。\n")
+		} else if uncert > 0 {
+			b.WriteString("部分字段未认证。对答案涉及的这些字段请加限定 —— 例如「该维度由 AI 推断，未经审核」。\n")
+		} else {
+			b.WriteString("全部字段已认证，可直接引用。\n")
+		}
+	}
+	return b.String()
+}
