@@ -19,6 +19,7 @@ export const enCore = {
   'nav.roles': 'Roles',
   'nav.themes': 'Themes',
   'nav.ai_settings': 'AI Agent',
+  'nav.semantic': 'Semantic Layer',
   'nav.schedules': 'Alerts & Reports',
   'nav.alerts': 'Alerts',
   'nav.reports': 'Reports',

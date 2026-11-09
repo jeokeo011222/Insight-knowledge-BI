@@ -26,6 +26,7 @@ import ScreenEditor from './pages/screens/ScreenEditor';
 import ScreenView from './pages/screens/ScreenView';
 import DashboardPublic from './pages/dashboards/DashboardPublic';
 import AiChat from './pages/ai/AiChat';
+import SemanticManager from './pages/semantic/SemanticManager';
 import { useI18n } from './i18n';
 
 // Monaco is heavy: keep SQL Lab out of the initial bundle.
@@ -117,6 +118,7 @@ export default function App() {
         <Route path="/settings/system" element={<SystemSettings />} />
         <Route path="/settings/audit" element={<AuditLog />} />
         <Route path="/settings/ai" element={<AISettings />} />
+        <Route path="/settings/semantic" element={<SemanticManager />} />
         <Route path="/settings/schedules" element={<Schedules />} />
 
         {/* Legacy entries kept as redirects so old bookmarks still land. */}

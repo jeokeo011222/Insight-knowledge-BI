@@ -19,6 +19,7 @@ export const zhCore = {
   'nav.roles': '角色管理',
   'nav.themes': '主题管理',
   'nav.ai_settings': 'AI 智能体',
+  'nav.semantic': '语义层管理',
   'nav.schedules': '告警与报告',
   'nav.alerts': '告警配置',
   'nav.reports': '定时报告',

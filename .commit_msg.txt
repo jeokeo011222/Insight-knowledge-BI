@@ -1,22 +1,30 @@
-feat(semantic): Agent prompt certification 标注 + beat cron 自动反哺
+feat(semantic): 前端语义层管理页 UI — Auto Ontology Discover→Certify→Learn 三阶段
 
-P2-a: Agent prompt 里区分 certified vs draft
-- semantic_context.go: 新增 certificationPrompt(ctx, datasetID, lang) string
-  * 统计 certified_metrics / certified_other / uncertified 数量
-  * 中英文双语分支
-  * certMetrics==0 → "⚠️ 口径由 AI 生成"
-  * uncert>0 → "部分字段未认证, 答完加限定"
-  * 全认证 → "可直接引用"
-- agent_planner.go: prompt 最后加 certificationPrompt 注入
+新增页面:
+- pages/semantic/SemanticManager.tsx: 完整语义层管理页
+  * 顶部 Dataset Selector + 自动生成 Draft 模型按钮 + 冷启动兜底
+  * 三个 Tab:
+    1. 模型列表 — Tag 展示 source/status/certified_at, 点击行选中详情
+    2. 模型详情 — 字段表 + Join 关系表, 每行可认证/撤销, 一键认证全模型
+    3. 缺口扫描 — 调用 scanSemanticGaps, 展示覆盖度 + 缺口列表
+  * 顶部统计卡片: 字段总数 / 已认证指标 / 未认证字段 / Join 关系
+  * 导出 JSON / 导出 OSI (Open Semantic Interchange)
+  * 底部 Auto Ontology 闭环说明 (Discover→Certify→Learn 彩色 Alert 卡片)
 
-P2-b: BatchAdoptFromRecent 挂到 beat cron
-- cmd/superset/main.go beat 命令里加 runAutoAdoptLoop goroutine
-  * 每 12h 跑一次
-  * 扫最近 7 天 Agent SQL
-  * 相同表达式出现 >= 3 次 → 自动生成 draft SemanticField
-  * 启动时等 30s 先跑一次
-- adopt.go 的 BatchAdoptFromRecent 已就绪, 直接调用
+接线:
+- App.tsx: 路由 /settings/semantic, import SemanticManager
+- AppLayout.tsx: 侧边栏菜单入口 "语义层管理" (FileProtectOutlined 图标) + activeKey 映射
+- i18n: zh.core.ts + en.core.ts 加 nav.semantic
 
-三阶段闭环完整: Discover (ontogen) → Certify (人工) → Adopt (Learn, beat cron)
+API client 补全:
+- api/semantic.ts 类型加 certified_at 字段 (ModelRow / FieldRow / RelationshipRow)
+- semanticCertEndpoints 加 modelCertify / fieldCertify / relCertify / generate
+- certifySemanticModel / certifySemanticField / certifySemanticRelationship
+- generateSemanticModel (ontogen.go 的 HTTP 入口)
+
+后端已有:
+- certification.go 三个 HTTP 端点 + ontogen.go GenerateModelFromDataset
+- beat cron 每 12h 自动 BatchAdoptFromRecent
 
 验证: go build ✅ go vet ✅ go test 20包全绿 ✅
+      npx tsc --noEmit 零错误 ✅

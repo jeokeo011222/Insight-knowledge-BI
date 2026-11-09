@@ -43,6 +43,7 @@ export interface SemanticModelRow {
   manifest_hash?: string;
   source: string;
   published_on?: string | null;
+  certified_at?: string | null;
 }
 
 export interface SemanticFieldRow {
@@ -61,6 +62,7 @@ export interface SemanticFieldRow {
   default_agg?: string;
   is_dttm?: boolean;
   sort_order: number;
+  certified_at?: string | null;
 }
 
 export interface SemanticRelationshipRow {
@@ -70,6 +72,7 @@ export interface SemanticRelationshipRow {
   to_model_id: number;
   join_type: string;
   condition: string;
+  certified_at?: string | null;
 }
 
 export interface SemanticRuleRow {
@@ -225,6 +228,56 @@ export async function createSemanticRelationship(
 
 export async function deleteSemanticRelationship(id: number): Promise<void> {
   await client.delete(semanticEndpoints.relationship(id));
+}
+
+/* ------------------------------------------------------- certification */
+
+export const semanticCertEndpoints = {
+  modelCertify: (id: number | string) => `/semantic/model/${id}/certify`,
+  fieldCertify: (id: number | string) => `/semantic/field/${id}/certify`,
+  relCertify: (id: number | string) => `/semantic/relationship/${id}/certify`,
+  generate: (datasetID: number | string) => `/dataset/${datasetID}/semantic/generate`,
+} as const;
+
+export async function certifySemanticModel(id: number, certified = true): Promise<SemanticModelRow> {
+  const response = await client.post<{ result: SemanticModelRow }>(
+    semanticCertEndpoints.modelCertify(id),
+    { certified },
+  );
+  return response.result;
+}
+
+export async function certifySemanticField(id: number, certified = true): Promise<SemanticFieldRow> {
+  const response = await client.post<{ result: SemanticFieldRow }>(
+    semanticCertEndpoints.fieldCertify(id),
+    { certified },
+  );
+  return response.result;
+}
+
+export async function certifySemanticRelationship(
+  id: number,
+  certified = true,
+): Promise<SemanticRelationshipRow> {
+  const response = await client.post<{ result: SemanticRelationshipRow }>(
+    semanticCertEndpoints.relCertify(id),
+    { certified },
+  );
+  return response.result;
+}
+
+export interface SemanticGenerateResult {
+  model: SemanticModelRow;
+  fields: SemanticFieldRow[];
+  relationships: SemanticRelationshipRow[];
+}
+
+export async function generateSemanticModel(datasetID: number): Promise<SemanticGenerateResult> {
+  const response = await client.post<{ result: SemanticGenerateResult }>(
+    semanticCertEndpoints.generate(datasetID),
+    {},
+  );
+  return response.result;
 }
 
 /* -------------------------------------------------------------------- rules */

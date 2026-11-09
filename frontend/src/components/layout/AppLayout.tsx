@@ -38,6 +38,7 @@ import {
   TableOutlined,
   TagsOutlined,
   TeamOutlined,
+  FileProtectOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { useAppDispatch, useAppSelector, usePermission } from '../../store';
@@ -183,6 +184,13 @@ export default function AppLayout() {
         permission: { action: 'can_read', resource: 'AIAgent' },
       },
       {
+        key: 'semantic',
+        label: t('nav.semantic'),
+        icon: <FileProtectOutlined />,
+        onSelect: () => navigate('/settings/semantic'),
+        permission: { action: 'can_read', resource: 'SemanticLayer' },
+      },
+      {
         key: 'schedules',
         label: t('nav.schedules'),
         icon: <BellOutlined />,
@@ -265,6 +273,7 @@ export default function AppLayout() {
     if (path.startsWith('/settings/system') || path.startsWith('/settings/themes')) return 'system';
     if (path.startsWith('/settings/audit')) return 'audit';
     if (path.startsWith('/settings/ai')) return 'ai-settings';
+    if (path.startsWith('/settings/semantic')) return 'semantic';
     if (path.startsWith('/rls')) return 'access';
     if (path.startsWith('/annotation')) return 'annotations';
     return '';
