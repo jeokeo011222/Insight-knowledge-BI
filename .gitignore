@@ -20,6 +20,7 @@ external.db-wal
 external.db-shm
 *.sqlite
 *.sqlite3
+*.db
 *.db-journal
 *.db-wal
 *.db-shm
