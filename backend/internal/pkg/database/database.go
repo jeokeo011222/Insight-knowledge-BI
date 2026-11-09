@@ -6,17 +6,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
 	"superset/internal/models"
 )
 
-// Connect opens the metadata database connection.
+// Connect opens the metadata database connection. Drivers:
+//
+//   - DSN starting with "sqlite://" or "sqlite:" → gorm.io/driver/sqlite
+//   - Everything else (postgresql://, postgres://, etc.) → gorm.io/driver/postgres
+//
+// This lets the operator run on a laptop with zero external services (SQLite)
+// or in production against PostgreSQL, without any code change.
 func Connect(dsn string, debug bool) (*gorm.DB, error) {
 	lg := logger.Default
 	if debug {
@@ -24,7 +32,23 @@ func Connect(dsn string, debug bool) (*gorm.DB, error) {
 	} else {
 		lg = lg.LogMode(logger.Silent)
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+
+	var dialector gorm.Dialector
+	switch {
+	case strings.HasPrefix(dsn, "sqlite://") || strings.HasPrefix(dsn, "sqlite:"):
+		// gorm sqlite driver expects just the file path (or ":memory:"),
+		// but we accept "sqlite:///path/to/file.db" and strip the scheme.
+		path := strings.TrimPrefix(dsn, "sqlite://")
+		path = strings.TrimPrefix(path, "sqlite:")
+		if path == "" || path == "memory:" {
+			path = ":memory:"
+		}
+		dialector = sqlite.Open(path)
+	default:
+		dialector = postgres.Open(dsn)
+	}
+
+	db, err := gorm.Open(dialector, &gorm.Config{
 		Logger:                                   lg,
 		DisableForeignKeyConstraintWhenMigrating: true,
 		PrepareStmt:                              true,

@@ -31,6 +31,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.5.9
+	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.30.0
 	modernc.org/sqlite v1.60.1
 )
@@ -84,6 +85,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/metakeule/fmtdate v1.1.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
