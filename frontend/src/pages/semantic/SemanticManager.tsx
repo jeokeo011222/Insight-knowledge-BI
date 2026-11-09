@@ -35,7 +35,7 @@ import {
 } from '@ant-design/icons';
 import { usePermission } from '../../store';
 import { useI18n } from '../../i18n';
-import type { Dataset } from '../../api/types';
+import type { Dataset, Paginated } from '../../api/types';
 import { client, endpoints, errorMessage } from '../../api/client';
 import {
   certifySemanticField,
@@ -78,9 +78,8 @@ export default function SemanticManager() {
   useEffect(() => {
     (async () => {
       try {
-        const resp = await client.get<Dataset[]>(endpoints.datasets, { page_size: 200 });
-        const list = 'items' in resp ? (resp as unknown as { items: Dataset[] }).items : (resp as unknown as Dataset[]);
-        setDatasets(list ?? []);
+        const resp = await client.get<Paginated<Dataset>>(endpoints.datasets, { page_size: 200 });
+        setDatasets(resp.result ?? []);
       } catch {
         // 静默失败 — dataset 列表空会让整个页面显示 Empty，这是正确行为
       }
